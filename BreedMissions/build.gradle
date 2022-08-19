@@ -1,0 +1,5 @@
+group 'BreedMissions'
+
+dependencies {
+    compileOnly 'com.bgsoftware:WildStackerAPI:3.6.3'
+}

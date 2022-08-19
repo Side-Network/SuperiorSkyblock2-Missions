@@ -1,6 +1,5 @@
 plugins {
     id 'java'
-    id 'maven'
     id 'com.github.johnrengelman.shadow' version '6.1.0'
     id 'maven-publish'
 }
@@ -12,13 +11,14 @@ subprojects {
     apply plugin: 'com.github.johnrengelman.shadow'
 
     repositories {
+        maven { url 'https://papermc.io/repo/repository/maven-public/' }
         maven { url 'https://repo.bg-software.com/repository/nms/' }
         maven { url 'https://repo.bg-software.com/repository/api/' }
         maven { url 'https://repo.bg-software.com/repository/public-libs/' }
     }
 
     dependencies {
-        compileOnly "org.spigotmc:v1_9_R2:latest"
+        compileOnly "io.papermc.paper:paper-api:1.17.1-R0.1-SNAPSHOT"
         compileOnly "com.bgsoftware:SuperiorSkyblockAPI:1.11.0"
     }
 
