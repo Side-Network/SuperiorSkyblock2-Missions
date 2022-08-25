@@ -176,7 +176,14 @@ public final class SellMissions extends Mission<SellMissions.SellTracker> implem
 
     @EventHandler(ignoreCancelled = true)
     public void onScytherAutoSell(ScytherAutosellEvent event) {
-        ItemStack resultItem = new ItemStack(event.getCropMaterial());
+        Material mat = event.getCropMaterial();
+        switch (mat) {
+            case BAMBOO -> mat = Material.BAMBOO_SAPLING;
+            case CARROTS -> mat = Material.CARROT;
+            case POTATOES -> mat = Material.POTATO;
+            case COCOA_BEANS -> mat = Material.COCOA;
+        }
+        ItemStack resultItem = new ItemStack(mat);
         resultItem.setAmount(event.getAmount());
 
         SuperiorPlayer superiorPlayer = SuperiorSkyblockAPI.getPlayer(event.getPlayer());
