@@ -1,26 +1,7 @@
 package com.bgsoftware.superiorskyblock.missions;
 
 import com.bgsoftware.superiorskyblock.api.SuperiorSkyblock;
-import com.bgsoftware.superiorskyblock.api.events.IslandBankDepositEvent;
-import com.bgsoftware.superiorskyblock.api.events.IslandBankWithdrawEvent;
-import com.bgsoftware.superiorskyblock.api.events.IslandBiomeChangeEvent;
-import com.bgsoftware.superiorskyblock.api.events.IslandCoopPlayerEvent;
-import com.bgsoftware.superiorskyblock.api.events.IslandCreateEvent;
-import com.bgsoftware.superiorskyblock.api.events.IslandDisbandEvent;
-import com.bgsoftware.superiorskyblock.api.events.IslandEnterEvent;
-import com.bgsoftware.superiorskyblock.api.events.IslandEnterProtectedEvent;
-import com.bgsoftware.superiorskyblock.api.events.IslandEvent;
-import com.bgsoftware.superiorskyblock.api.events.IslandInviteEvent;
-import com.bgsoftware.superiorskyblock.api.events.IslandJoinEvent;
-import com.bgsoftware.superiorskyblock.api.events.IslandKickEvent;
-import com.bgsoftware.superiorskyblock.api.events.IslandLeaveEvent;
-import com.bgsoftware.superiorskyblock.api.events.IslandLeaveProtectedEvent;
-import com.bgsoftware.superiorskyblock.api.events.IslandQuitEvent;
-import com.bgsoftware.superiorskyblock.api.events.IslandSchematicPasteEvent;
-import com.bgsoftware.superiorskyblock.api.events.IslandTransferEvent;
-import com.bgsoftware.superiorskyblock.api.events.IslandUncoopPlayerEvent;
-import com.bgsoftware.superiorskyblock.api.events.IslandWorthCalculatedEvent;
-import com.bgsoftware.superiorskyblock.api.events.IslandWorthUpdateEvent;
+import com.bgsoftware.superiorskyblock.api.events.*;
 import com.bgsoftware.superiorskyblock.api.missions.Mission;
 import com.bgsoftware.superiorskyblock.api.missions.MissionLoadException;
 import com.bgsoftware.superiorskyblock.api.scripts.IScriptEngine;
@@ -28,6 +9,7 @@ import com.bgsoftware.superiorskyblock.api.wrappers.SuperiorPlayer;
 import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.configuration.ConfigurationSection;
+import org.bukkit.event.Event;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -188,15 +170,20 @@ public final class IslandMissions extends Mission<Boolean> implements Listener {
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
-    public void onIslandWorthUpdate(IslandSchematicPasteEvent e) {
+    public void onIslandSchematicPaste(IslandSchematicPasteEvent e) {
         tryComplete(e, e.getIsland().getOwner());
     }
 
-    private void tryComplete(IslandEvent event, SuperiorPlayer superiorPlayer) {
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onIslandMissionComplete(MissionCompleteEvent e) {
+        tryComplete(e, e.getPlayer());
+    }
+
+    private void tryComplete(Event event, SuperiorPlayer superiorPlayer) {
         tryComplete(event, superiorPlayer, null);
     }
 
-    private void tryComplete(IslandEvent event, SuperiorPlayer superiorPlayer, SuperiorPlayer targetPlayer) {
+    private void tryComplete(Event event, SuperiorPlayer superiorPlayer, SuperiorPlayer targetPlayer) {
         String eventName = event.getClass().getSimpleName();
         if (missionEvents.containsKey(eventName)) {
             boolean success = false;
@@ -206,14 +193,18 @@ public final class IslandMissions extends Mission<Boolean> implements Listener {
 
             IScriptEngine scriptEngine = superiorSkyblock.getScriptEngine();
 
-            try {
-                String result = placeholders.parse(scriptEngine.eval(successCheck, bindings) + "", superiorPlayer.asOfflinePlayer());
-                success = Boolean.parseBoolean(result);
-            } catch (Exception ex) {
-                plugin.getLogger().info("&cError occurred while checking for success condition for IslandMission.");
-                plugin.getLogger().info("&cCurrent Script Engine: " + scriptEngine);
-                plugin.getLogger().info("&cPlaceholders: " + placeholders);
-                ex.printStackTrace();
+            if (!successCheck.equalsIgnoreCase("false")) {
+                try {
+                    String result = placeholders.parse(scriptEngine.eval(successCheck, bindings) + "", superiorPlayer.asOfflinePlayer());
+                    success = Boolean.parseBoolean(result);
+                } catch (Exception ex) {
+                    plugin.getLogger().info("&cError occurred while checking for success condition for IslandMission.");
+                    plugin.getLogger().info("&cCurrent Script Engine: " + scriptEngine);
+                    plugin.getLogger().info("&cPlaceholders: " + placeholders);
+                    ex.printStackTrace();
+                }
+            } else {
+                success = true;
             }
 
             if (success) {
