@@ -188,6 +188,9 @@ public final class BuyMissions extends Mission<BuyMissions.BuyTracker> implement
         resultItem.setAmount(event.getResult().getAmount());
 
         SuperiorPlayer superiorPlayer = SuperiorSkyblockAPI.getPlayer(event.getResult().getPlayer());
+        if (!superiorSkyblock.getMissions().hasAllRequiredMissions(superiorPlayer, this))
+            return;
+
         trackItem(superiorPlayer, resultItem);
     }
 
