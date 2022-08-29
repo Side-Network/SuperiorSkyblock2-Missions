@@ -8,11 +8,7 @@ import com.bgsoftware.superiorskyblock.api.wrappers.SuperiorPlayer;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.configuration.ConfigurationSection;
-import org.bukkit.entity.ArmorStand;
-import org.bukkit.entity.Entity;
-import org.bukkit.entity.LivingEntity;
-import org.bukkit.entity.Player;
-import org.bukkit.entity.Projectile;
+import org.bukkit.entity.*;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -44,6 +40,7 @@ public final class KillsMissions extends Mission<KillsMissions.KillsTracker> imp
 
     private JavaPlugin plugin;
     private final Map<List<String>, Integer> requiredEntities = new HashMap<>();
+    private final Map<EntityType, String> entityBossBar = new HashMap<>();
     private boolean resetAfterFinish;
 
     @Override
@@ -56,7 +53,15 @@ public final class KillsMissions extends Mission<KillsMissions.KillsTracker> imp
         for (String key : section.getConfigurationSection("required-entities").getKeys(false)) {
             List<String> entityTypes = section.getStringList("required-entities." + key + ".types");
             int requiredAmount = section.getInt("required-entities." + key + ".amount");
+            String bossBar = section.getString("required-entities." + key + ".boss-bar", "?");
+
             requiredEntities.put(entityTypes, requiredAmount);
+            for (String type : entityTypes) {
+                try {
+                    EntityType entityType = EntityType.valueOf(type);
+                    entityBossBar.put(entityType, bossBar);
+                } catch (Exception ignored) {}
+            }
         }
 
         resetAfterFinish = section.getBoolean("reset-after-finish", false);
@@ -95,6 +100,23 @@ public final class KillsMissions extends Mission<KillsMissions.KillsTracker> imp
             kills += Math.min(killsTracker.getKills(requiredEntity.getKey()), requiredEntity.getValue());
 
         return kills;
+    }
+
+    public int getRequired(String type) {
+        for (Map.Entry<List<String>, Integer> entry : requiredEntities.entrySet()) {
+            if (entry.getKey().contains(type))
+                return entry.getValue();
+        }
+
+        return 0;
+    }
+
+    public int getProgress(SuperiorPlayer superiorPlayer, EntityType type) {
+        KillsTracker killsTracker = get(superiorPlayer);
+        if (killsTracker == null)
+            return 0;
+
+        return killsTracker.getKills(type.name());
     }
 
     @Override
@@ -190,7 +212,9 @@ public final class KillsMissions extends Mission<KillsMissions.KillsTracker> imp
         if(killsTracker == null)
             return;
 
-        killsTracker.track(e.getEntity().getType().name(), getEntityAmount(e.getEntity()));
+        killsTracker.track(e.getEntityType().name(), getEntityAmount(e.getEntity()));
+        if (entityBossBar.containsKey(e.getEntityType()))
+            sendBossBar(superiorPlayer, entityBossBar.get(e.getEntityType()), getProgress(superiorPlayer, e.getEntityType()), getRequired(e.getEntityType().name()), getProgress(superiorPlayer));
 
         Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, () -> superiorPlayer.runIfOnline(player -> {
             if (canComplete(superiorPlayer))
@@ -252,6 +276,18 @@ public final class KillsMissions extends Mission<KillsMissions.KillsTracker> imp
         void track(String entity, int amount) {
             int newAmount = amount + killsTracker.getOrDefault(entity, 0);
             killsTracker.put(entity, newAmount);
+        }
+
+        int getKills(String type) {
+            int amount = 0;
+            boolean all = type.equalsIgnoreCase("ALL");
+
+            for (String entity : killsTracker.keySet()) {
+                if (all || entity.equalsIgnoreCase(type))
+                    amount += killsTracker.get(entity);
+            }
+
+            return amount;
         }
 
         int getKills(List<String> entities) {

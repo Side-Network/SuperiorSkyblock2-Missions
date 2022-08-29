@@ -10,6 +10,7 @@ import org.bukkit.ChatColor;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.ArmorStand;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -38,6 +39,7 @@ public final class BreedMissions extends Mission<BreedMissions.BreedTracker> imp
 
     private JavaPlugin plugin;
     private final Map<List<String>, Integer> requiredEntities = new HashMap<>();
+    private final Map<EntityType, String> entityBossBar = new HashMap<>();
     private boolean resetAfterFinish;
 
     @Override
@@ -50,7 +52,15 @@ public final class BreedMissions extends Mission<BreedMissions.BreedTracker> imp
         for (String key : section.getConfigurationSection("required-entities").getKeys(false)) {
             List<String> entityTypes = section.getStringList("required-entities." + key + ".types");
             int requiredAmount = section.getInt("required-entities." + key + ".amount");
+            String bossBar = section.getString("required-entities." + key + ".boss-bar", "?");
+
             requiredEntities.put(entityTypes, requiredAmount);
+            for (String type : entityTypes) {
+                try {
+                    EntityType entityType = EntityType.valueOf(type);
+                    entityBossBar.put(entityType, bossBar);
+                } catch (Exception ignored) {}
+            }
         }
 
         resetAfterFinish = section.getBoolean("reset-after-finish", false);
@@ -89,6 +99,23 @@ public final class BreedMissions extends Mission<BreedMissions.BreedTracker> imp
             bred += Math.min(breedTracker.getBred(requiredEntity.getKey()), requiredEntity.getValue());
 
         return bred;
+    }
+
+    public int getRequired(EntityType type) {
+        for (Map.Entry<List<String>, Integer> entry : requiredEntities.entrySet()) {
+            if (entry.getKey().contains(type.name()))
+                return entry.getValue();
+        }
+
+        return 0;
+    }
+
+    public int getProgress(SuperiorPlayer superiorPlayer, EntityType type) {
+        BreedTracker breedTracker = get(superiorPlayer);
+        if (breedTracker == null)
+            return 0;
+
+        return breedTracker.getBred(type.name());
     }
 
     @Override
@@ -166,6 +193,8 @@ public final class BreedMissions extends Mission<BreedMissions.BreedTracker> imp
             return;
 
         breedTracker.track(e.getEntity().getType().name(), 1);
+        if (entityBossBar.containsKey(e.getEntityType()))
+            sendBossBar(superiorPlayer, entityBossBar.get(e.getEntityType()), getProgress(superiorPlayer, e.getEntityType()), getRequired(e.getEntityType()), getProgress(superiorPlayer));
 
         Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, () -> superiorPlayer.runIfOnline(player -> {
             if (canComplete(superiorPlayer))
@@ -216,6 +245,18 @@ public final class BreedMissions extends Mission<BreedMissions.BreedTracker> imp
         void track(String entity, int amount) {
             int newAmount = amount + breedTracker.getOrDefault(entity, 0);
             breedTracker.put(entity, newAmount);
+        }
+
+        int getBred(String type) {
+            int amount = 0;
+            boolean all = type.equalsIgnoreCase("ALL");
+
+            for (String entity : breedTracker.keySet()) {
+                if (all || entity.equalsIgnoreCase(type))
+                    amount += breedTracker.get(entity);
+            }
+
+            return amount;
         }
 
         int getBred(List<String> entities) {

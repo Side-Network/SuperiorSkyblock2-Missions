@@ -41,6 +41,7 @@ public final class EnchantingMissions extends Mission<EnchantingMissions.Enchant
     private static final Pattern percentagePattern = Pattern.compile("(.*)\\{enchanted_(.+?)}(.*)");
 
     private final Map<List<String>, RequiredEnchantment> requiredEnchantments = new HashMap<>();
+    private final Map<RequiredEnchantment, String> enchBossBar = new HashMap<>();
 
     private String enchantedPlaceholder, notEnchantedPlaceholder;
     private JavaPlugin plugin;
@@ -68,8 +69,13 @@ public final class EnchantingMissions extends Mission<EnchantingMissions.Enchant
                 enchantments.put(_enchantment, section.getInt("required-enchants." + key + ".enchants." + enchantment));
             }
 
-            if (!enchantments.isEmpty())
-                requiredEnchantments.put(itemTypes, new RequiredEnchantment(key, enchantments, section.getInt("required-enchants." + key + ".amount", 1)));
+            if (!enchantments.isEmpty()) {
+                String bossBar = section.getString("required-enchants." + key + ".boss-bar", "?");
+                RequiredEnchantment requiredEnchantment = new RequiredEnchantment(key, enchantments, section.getInt("required-enchants." + key + ".amount", 1));
+
+                requiredEnchantments.put(itemTypes, requiredEnchantment);
+                enchBossBar.put(requiredEnchantment, bossBar);
+            }
 
             setClearMethod(enchantsTracker -> enchantsTracker.enchantsTracker.clear());
         }
@@ -118,6 +124,14 @@ public final class EnchantingMissions extends Mission<EnchantingMissions.Enchant
         }
 
         return enchants;
+    }
+
+    public int getProgress(SuperiorPlayer superiorPlayer, RequiredEnchantment requiredEnchantment) {
+        EnchantsTracker enchantsTracker = get(superiorPlayer);
+        if (enchantsTracker == null)
+            return 0;
+
+        return enchantsTracker.getEnchanted(requiredEnchantment.key);
     }
 
     @Override
@@ -225,7 +239,7 @@ public final class EnchantingMissions extends Mission<EnchantingMissions.Enchant
         if(enchantsTracker == null)
             return;
 
-        enchantsTracker.track(itemStack);
+        enchantsTracker.track(superiorPlayer, itemStack);
 
         Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, () -> superiorPlayer.runIfOnline(_player -> {
             if (canComplete(superiorPlayer))
@@ -255,7 +269,7 @@ public final class EnchantingMissions extends Mission<EnchantingMissions.Enchant
 
         private final Map<String, Integer> enchantsTracker = new HashMap<>();
 
-        void track(ItemStack itemStack) {
+        void track(SuperiorPlayer superiorPlayer, ItemStack itemStack) {
             outerLoop:
             for (List<String> requiredItems : requiredEnchantments.keySet()) {
                 if (requiredItems.contains(itemStack.getType().name())) {
@@ -270,6 +284,8 @@ public final class EnchantingMissions extends Mission<EnchantingMissions.Enchant
                         }
                     }
                     enchantsTracker.put(requiredEnchantment.key, getEnchanted(requiredEnchantment.key) + 1);
+                    if (enchBossBar.containsKey(requiredEnchantment))
+                        sendBossBar(superiorPlayer, enchBossBar.get(requiredEnchantment), getProgress(superiorPlayer, requiredEnchantment), requiredEnchantment.amount, getProgress(superiorPlayer));
                     break;
                 }
             }

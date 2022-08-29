@@ -38,6 +38,7 @@ public final class CraftingMissions extends Mission<CraftingMissions.CraftingsTr
             valuePattern = Pattern.compile("(.*)\\{value_(.+?)}(.*)");
 
     private final Map<ItemStack, Integer> itemsToCraft = new HashMap<>();
+    private final Map<Material, String> itemsBossBar = new HashMap<>();
 
     private JavaPlugin plugin;
 
@@ -52,6 +53,7 @@ public final class CraftingMissions extends Mission<CraftingMissions.CraftingsTr
             String type = section.getString("craftings." + key + ".type");
             short data = (short) section.getInt("craftings." + key + ".data", 0);
             int amount = section.getInt("craftings." + key + ".amount", 1);
+            String bossBar = section.getString("craftings." + key + ".boss-bar", "?");
             Material material;
 
             try {
@@ -61,6 +63,7 @@ public final class CraftingMissions extends Mission<CraftingMissions.CraftingsTr
             }
 
             itemsToCraft.put(new ItemStack(material, 1, data), amount);
+            itemsBossBar.put(material, bossBar);
         }
 
         Bukkit.getPluginManager().registerEvents(this, plugin);
@@ -99,6 +102,21 @@ public final class CraftingMissions extends Mission<CraftingMissions.CraftingsTr
             interactions += Math.min(craftingsTracker.getCrafts(entry.getKey()), entry.getValue());
 
         return interactions;
+    }
+
+    public int getRequired(ItemStack itemStack) {
+        ItemStack keyItem = itemStack.clone();
+        keyItem.setAmount(1);
+
+        return this.itemsToCraft.getOrDefault(keyItem, 0);
+    }
+
+    public int getProgress(SuperiorPlayer superiorPlayer, ItemStack itemStack) {
+        CraftingsTracker craftingsTracker = get(superiorPlayer);
+        if (craftingsTracker == null)
+            return 0;
+
+        return craftingsTracker.getCrafts(itemStack);
     }
 
     @Override
@@ -193,11 +211,12 @@ public final class CraftingMissions extends Mission<CraftingMissions.CraftingsTr
 
     private void trackItem(SuperiorPlayer superiorPlayer, ItemStack itemStack) {
         CraftingsTracker blocksTracker = getOrCreate(superiorPlayer, s -> new CraftingsTracker());
-
-        if(blocksTracker == null)
+        if (blocksTracker == null)
             return;
 
         blocksTracker.trackItem(itemStack);
+        if (itemsBossBar.containsKey(itemStack.getType()))
+            sendBossBar(superiorPlayer, itemsBossBar.get(itemStack.getType()), getProgress(superiorPlayer, itemStack), getRequired(itemStack), getProgress(superiorPlayer));
 
         Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, () -> superiorPlayer.runIfOnline(player -> {
             if (canComplete(superiorPlayer))

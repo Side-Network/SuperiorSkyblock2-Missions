@@ -54,6 +54,7 @@ public final class BlocksMissions extends Mission<BlocksMissions.BlocksCounter> 
             valuePattern = Pattern.compile("(.*)\\{value_(.+?)}(.*)");
 
     private final Map<List<String>, Integer> requiredBlocks = new HashMap<>();
+    private final Map<String, String> blocksBossBar = new HashMap<>();
 
     private boolean onlyNatural, blocksPlacement, replaceBlocks;
     private JavaPlugin plugin;
@@ -68,7 +69,12 @@ public final class BlocksMissions extends Mission<BlocksMissions.BlocksCounter> 
         for (String key : section.getConfigurationSection("required-blocks").getKeys(false)) {
             List<String> blocks = section.getStringList("required-blocks." + key + ".types");
             int requiredAmount = section.getInt("required-blocks." + key + ".amount");
+            String bossBar = section.getString("required-blocks." + key + ".boss-bar", "?");
+
             requiredBlocks.put(blocks, requiredAmount);
+            for (String block : blocks) {
+                blocksBossBar.put(block, bossBar);
+            }
         }
 
         //resetAfterFinish = section.getBoolean("reset-after-finish", false);
@@ -119,6 +125,23 @@ public final class BlocksMissions extends Mission<BlocksMissions.BlocksCounter> 
             interactions += Math.min(blocksCounter.getBlocksCount(requiredBlock.getKey()), requiredBlock.getValue());
 
         return interactions;
+    }
+
+    public int getRequired(String type) {
+        for (Map.Entry<List<String>, Integer> entry : requiredBlocks.entrySet()) {
+            if (entry.getKey().contains(type))
+                return entry.getValue();
+        }
+
+        return -1;
+    }
+
+    public int getProgress(SuperiorPlayer superiorPlayer, String type) {
+        BlocksCounter blocksCounter = get(superiorPlayer);
+        if (blocksCounter == null)
+            return 0;
+
+        return blocksCounter.getBlocksCount(type);
     }
 
     @Override
@@ -410,6 +433,12 @@ public final class BlocksMissions extends Mission<BlocksMissions.BlocksCounter> 
         blocksCounter.countBlock(blockInfo.getBlockKey(), amount);
         blocksCounter.countBlock("ALL", amount);
 
+        if (blocksBossBar.containsKey(block.getType().name()) && getRequired(block.getType().name()) > -1)
+            sendBossBar(superiorPlayer, blocksBossBar.get(block.getType().name()), getProgress(superiorPlayer, block.getType().name()), getRequired(block.getType().name()), getProgress(superiorPlayer));
+        else if (blocksBossBar.containsKey("ALL") && getRequired("ALL") > -1)
+            sendBossBar(superiorPlayer, blocksBossBar.get("ALL"), getProgress(superiorPlayer, "ALL"), getRequired("ALL"), getProgress(superiorPlayer));
+
+
         Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, () -> superiorPlayer.runIfOnline(_player -> {
             if (canComplete(superiorPlayer))
                 superiorSkyblock.getMissions().rewardMission(this, superiorPlayer, true);
@@ -488,9 +517,10 @@ public final class BlocksMissions extends Mission<BlocksMissions.BlocksCounter> 
         void countBlock(String blockKey, int amount) {
             blockKey = blockKey.toUpperCase();
             int blockCount = getBlocksCount(blockKey);
+            if (trackedBlockCounts.getOrDefault(blockKey, 0) + amount < 0)
+                return;
             this.trackedBlockCounts.put(blockKey, blockCount + amount);
         }
-
 
         void loadBlockCount(String blockKey, int amount) {
             this.trackedBlockCounts.put(blockKey, amount);

@@ -19,7 +19,7 @@ subprojects {
 
     dependencies {
         compileOnly "io.papermc.paper:paper-api:1.17.1-R0.1-SNAPSHOT"
-        compileOnly "com.bgsoftware:SuperiorSkyblockAPI:1.11.0"
+        compileOnly(files("../SuperiorSkyblockAPI.jar"))
         compileOnly "com.google.code.findbugs:jsr305:1.3.9"
     }
 

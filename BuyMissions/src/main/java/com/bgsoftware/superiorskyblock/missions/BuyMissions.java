@@ -31,6 +31,7 @@ public final class BuyMissions extends Mission<BuyMissions.BuyTracker> implement
             valuePattern = Pattern.compile("(.*)\\{value_(.+?)}(.*)");
 
     private final Map<ItemStack, Integer> itemsToBuy = new HashMap<>();
+    private final Map<Material, String> itemsBossBar = new HashMap<>();
 
     private JavaPlugin plugin;
 
@@ -45,6 +46,7 @@ public final class BuyMissions extends Mission<BuyMissions.BuyTracker> implement
             String type = section.getString("buy-items." + key + ".type");
             short data = (short) section.getInt("buy-items." + key + ".data", 0);
             int amount = section.getInt("buy-items." + key + ".amount", 1);
+            String bossBar = section.getString("buy-items." + key + ".boss-bar", "?");
             Material material;
 
             try {
@@ -54,6 +56,7 @@ public final class BuyMissions extends Mission<BuyMissions.BuyTracker> implement
             }
 
             itemsToBuy.put(new ItemStack(material, 1, data), amount);
+            itemsBossBar.put(material, bossBar);
         }
 
         Bukkit.getPluginManager().registerEvents(this, plugin);
@@ -92,6 +95,21 @@ public final class BuyMissions extends Mission<BuyMissions.BuyTracker> implement
             interactions += Math.min(buyTracker.getBought(entry.getKey()), entry.getValue());
 
         return interactions;
+    }
+
+    public int getRequired(ItemStack itemStack) {
+        ItemStack keyItem = itemStack.clone();
+        keyItem.setAmount(1);
+
+        return this.itemsToBuy.getOrDefault(keyItem, 0);
+    }
+
+    public int getProgress(SuperiorPlayer superiorPlayer, ItemStack itemStack) {
+        BuyTracker buyTracker = get(superiorPlayer);
+        if (buyTracker == null)
+            return 0;
+
+        return buyTracker.getBought(itemStack);
     }
 
     @Override
@@ -179,6 +197,8 @@ public final class BuyMissions extends Mission<BuyMissions.BuyTracker> implement
             return;
 
         buyTracker.trackItem(itemStack);
+        if (itemsBossBar.containsKey(itemStack.getType()))
+            sendBossBar(superiorPlayer, itemsBossBar.get(itemStack.getType()), getProgress(superiorPlayer, itemStack), getRequired(itemStack), getProgress(superiorPlayer));
 
         Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, () -> superiorPlayer.runIfOnline(player -> {
             if (canComplete(superiorPlayer))

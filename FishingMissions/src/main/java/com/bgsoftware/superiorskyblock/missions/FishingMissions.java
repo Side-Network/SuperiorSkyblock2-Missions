@@ -37,6 +37,7 @@ public final class FishingMissions extends Mission<FishingMissions.FishingTracke
             valuePattern = Pattern.compile("(.*)\\{value_(.+?)}(.*)");
 
     private final Map<List<ItemStack>, Integer> itemsToCatch = new HashMap<>();
+    private final Map<Material, String> itemsBossBar = new HashMap<>();
 
     private JavaPlugin plugin;
 
@@ -78,6 +79,10 @@ public final class FishingMissions extends Mission<FishingMissions.FishingTracke
             }
 
             this.itemsToCatch.put(itemsToCatch, amount);
+            String bossBar = section.getString("required-caughts." + key + ".boss-bar", "?");
+            for (ItemStack toCatch : itemsToCatch) {
+                itemsBossBar.put(toCatch.getType(), bossBar);
+            }
         }
 
         Bukkit.getPluginManager().registerEvents(this, plugin);
@@ -116,6 +121,27 @@ public final class FishingMissions extends Mission<FishingMissions.FishingTracke
             interactions += Math.min(fishingTracker.getCaughts(entry.getKey()), entry.getValue());
 
         return interactions;
+    }
+
+    public int getRequired(ItemStack itemStack) {
+        ItemStack keyItem = itemStack.clone();
+        keyItem.setAmount(1);
+
+        int req = 0;
+        for (Map.Entry<List<ItemStack>, Integer> entry : itemsToCatch.entrySet()) {
+            if (entry.getKey().contains(keyItem))
+                req += entry.getValue();
+        }
+
+        return req;
+    }
+
+    public int getProgress(SuperiorPlayer superiorPlayer, ItemStack itemStack) {
+        FishingTracker fishingTracker = get(superiorPlayer);
+        if (fishingTracker == null)
+            return 0;
+
+        return fishingTracker.getCaughts(itemStack);
     }
 
     @Override
@@ -210,6 +236,8 @@ public final class FishingMissions extends Mission<FishingMissions.FishingTracke
             return;
 
         blocksTracker.trackItem(itemStack);
+        if (itemsBossBar.containsKey(itemStack.getType()))
+            sendBossBar(superiorPlayer, itemsBossBar.get(itemStack.getType()), getProgress(superiorPlayer, itemStack), getRequired(itemStack), getProgress(superiorPlayer));
 
         Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, () -> superiorPlayer.runIfOnline(player -> {
             if (canComplete(superiorPlayer))
@@ -275,6 +303,10 @@ public final class FishingMissions extends Mission<FishingMissions.FishingTracke
             ItemStack keyItem = itemStack.clone();
             keyItem.setAmount(1);
             caughtItems.put(keyItem, caughtItems.getOrDefault(keyItem, 0) + itemStack.getAmount());
+        }
+
+        int getCaughts(ItemStack itemStack) {
+            return caughtItems.getOrDefault(itemStack, 0);
         }
 
         int getCaughts(List<ItemStack> itemStacks) {
