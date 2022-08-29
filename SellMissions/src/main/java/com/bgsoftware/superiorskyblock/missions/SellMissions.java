@@ -135,7 +135,17 @@ public final class SellMissions extends Mission<SellMissions.SellTracker> implem
         if (sellTracker == null)
             return 0;
 
-        return sellTracker.getSold(itemStack);
+        ItemStack keyItem = itemStack.clone();
+        keyItem.setAmount(1);
+        int progress = 0;
+
+        for (Map.Entry<List<ItemStack>, Integer> entry : this.itemsToSell.entrySet()) {
+            if (!entry.getKey().contains(keyItem))
+                continue;
+            progress += sellTracker.getSold(entry.getKey());
+        }
+
+        return progress;
     }
 
     @Override
@@ -266,7 +276,7 @@ public final class SellMissions extends Mission<SellMissions.SellTracker> implem
 
                 if (entry.isPresent()) {
                     line = line.replace("{percentage_" + matcher.group(2) + "}",
-                            "" + (sellTracker.getSold(itemStack) * 100) / entry.get().getValue());
+                            "" + (sellTracker.getSold(entry.get().getKey()) * 100) / entry.get().getValue());
                 }
             } catch (Exception ignored) {
             }
@@ -281,7 +291,7 @@ public final class SellMissions extends Mission<SellMissions.SellTracker> implem
 
                 if (entry.isPresent()) {
                     line = line.replace("{value_" + matcher.group(2) + "}",
-                            "" + (sellTracker.getSold(itemStack)));
+                            "" + (sellTracker.getSold(entry.get().getKey())));
                 }
             } catch (Exception ignored) {
             }
@@ -298,12 +308,6 @@ public final class SellMissions extends Mission<SellMissions.SellTracker> implem
             ItemStack keyItem = itemStack.clone();
             keyItem.setAmount(1);
             soldItems.put(keyItem, soldItems.getOrDefault(keyItem, 0) + itemStack.getAmount());
-        }
-
-        int getSold(ItemStack itemStack) {
-            ItemStack keyItem = itemStack.clone();
-            keyItem.setAmount(1);
-            return soldItems.getOrDefault(keyItem, 0);
         }
 
         int getSold(List<ItemStack> itemStacks) {
