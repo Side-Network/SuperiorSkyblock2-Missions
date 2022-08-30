@@ -141,7 +141,15 @@ public final class FishingMissions extends Mission<FishingMissions.FishingTracke
         if (fishingTracker == null)
             return 0;
 
-        return fishingTracker.getCaughts(itemStack);
+        ItemStack keyItem = itemStack.clone();
+        keyItem.setAmount(1);
+
+        for (Map.Entry<List<ItemStack>, Integer> entry : itemsToCatch.entrySet()) {
+            if (entry.getKey().contains(keyItem))
+                return fishingTracker.getCaughts(entry.getKey());
+        }
+
+        return 0;
     }
 
     @Override
