@@ -14,6 +14,7 @@ import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.block.BlockState;
+import org.bukkit.block.data.Ageable;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -67,6 +68,8 @@ public final class FarmingMissions extends Mission<FarmingMissions.FarmingTracke
             .put("BEETROOTS", 3)
             .put("COCOA", 2)
             .put("COCOA_BEANS", 2)
+            .put("NETHER_WART", 3)
+            .put("BEETROOT", 3)
             .build();
 
     private JavaPlugin plugin;
@@ -270,6 +273,8 @@ public final class FarmingMissions extends Mission<FarmingMissions.FarmingTracke
     private void handlePlantGrow(Block plantBlock, BlockState newState) {
         String blockTypeName = newState.getType().name();
         int age = newState.getRawData();
+        if (newState.getBlockData() instanceof Ageable)
+            age = ((Ageable) newState.getBlockData()).getAge();
 
         if (!isMissionPlant(blockTypeName))
             return;
