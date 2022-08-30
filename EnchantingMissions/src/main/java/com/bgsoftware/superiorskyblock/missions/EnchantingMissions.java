@@ -34,12 +34,13 @@ public final class EnchantingMissions extends Mission<EnchantingMissions.Enchant
 
     private static final SuperiorSkyblock superiorSkyblock = SuperiorSkyblockAPI.getSuperiorSkyblock();
 
-    private static final Pattern percentagePattern = Pattern.compile("(.*)\\{enchanted_(.+?)}(.*)");
+    private static final Pattern valuePattern = Pattern.compile("(.*)\\{enchanted_(.+?)}(.*)"),
+            doubleValuePattern = Pattern.compile("(.*)\\{enchanted_(.+?)}(.*)\\{enchanted_(.+?)}(.*)")
+    ;
 
-    private final Map<List<String>, RequiredEnchantment> requiredEnchantments = new HashMap<>();
+    private final Map<String, RequiredEnchantment> requiredEnchantments = new HashMap<>();
     private final Map<RequiredEnchantment, String> enchBossBar = new HashMap<>();
 
-    private String enchantedPlaceholder, notEnchantedPlaceholder;
     private JavaPlugin plugin;
 
     @Override
@@ -65,18 +66,15 @@ public final class EnchantingMissions extends Mission<EnchantingMissions.Enchant
             }
 
             String bossBar = section.getString("required-enchants." + key + ".boss-bar", "?");
-            RequiredEnchantment requiredEnchantment = new RequiredEnchantment(key, enchantments, section.getInt("required-enchants." + key + ".amount", 1), section.getInt("required-enchants." + key + ".min-level", 0));
+            RequiredEnchantment requiredEnchantment = new RequiredEnchantment(key, itemTypes, enchantments, section.getInt("required-enchants." + key + ".amount", 1), section.getInt("required-enchants." + key + ".min-level", 0));
 
-            requiredEnchantments.put(itemTypes, requiredEnchantment);
+            requiredEnchantments.put(key, requiredEnchantment);
             enchBossBar.put(requiredEnchantment, bossBar);
 
             setClearMethod(enchantsTracker -> enchantsTracker.enchantsTracker.clear());
         }
 
         Bukkit.getPluginManager().registerEvents(this, plugin);
-
-        enchantedPlaceholder = section.getString("enchanted-placeholder", "Yes");
-        notEnchantedPlaceholder = section.getString("not-enchanted-placeholder", "No");
     }
 
     @Override
@@ -91,7 +89,7 @@ public final class EnchantingMissions extends Mission<EnchantingMissions.Enchant
 
         for (RequiredEnchantment requiredEnchantment : this.requiredEnchantments.values()) {
             requiredItems += requiredEnchantment.amount;
-            enchants += enchantsTracker.getEnchanted(requiredEnchantment.key);
+            enchants += enchantsTracker.getEnchanted(requiredEnchantment);
         }
 
         return (double) enchants / requiredItems;
@@ -107,7 +105,7 @@ public final class EnchantingMissions extends Mission<EnchantingMissions.Enchant
         int enchants = 0;
 
         for (RequiredEnchantment requiredEnchantment : this.requiredEnchantments.values()) {
-            enchants += enchantsTracker.getEnchanted(requiredEnchantment.key);
+            enchants += enchantsTracker.getEnchanted(requiredEnchantment);
         }
 
         return enchants;
@@ -118,7 +116,7 @@ public final class EnchantingMissions extends Mission<EnchantingMissions.Enchant
         if (enchantsTracker == null)
             return 0;
 
-        return enchantsTracker.getEnchanted(requiredEnchantment.key);
+        return enchantsTracker.getEnchanted(requiredEnchantment);
     }
 
     @Override
@@ -183,7 +181,7 @@ public final class EnchantingMissions extends Mission<EnchantingMissions.Enchant
         for (Map.Entry<SuperiorPlayer, EnchantsTracker> entry : entrySet()) {
             String uuid = entry.getKey().getUniqueId().toString();
             List<String> data = new ArrayList<>();
-            entry.getValue().enchantsTracker.forEach((enchant, amount) -> data.add(enchant + ";" + amount));
+            entry.getValue().enchantsTracker.forEach((enchant, amount) -> data.add(enchant.key + ";" + amount));
             section.set(uuid, data);
         }
     }
@@ -200,15 +198,16 @@ public final class EnchantingMissions extends Mission<EnchantingMissions.Enchant
             section.getStringList(uuid).forEach(line -> {
                 String[] sections = line.split(";");
                 int amount = sections.length == 2 ? Integer.parseInt(sections[1]) : 1;
-                String enchantment = sections[0];
-                enchantsTracker.enchantsTracker.put(enchantment, amount);
+                String key = sections[0];
+                if (requiredEnchantments.containsKey(key))
+                    enchantsTracker.enchantsTracker.put(requiredEnchantments.get(key), amount);
             });
         }
     }
 
     private boolean isMissionItem(ItemStack itemStack) {
-        for (List<String> requiredItems : requiredEnchantments.keySet()) {
-            if (requiredItems.contains("ALL") || requiredItems.contains("all") || requiredItems.contains(itemStack.getType().name()))
+        for (RequiredEnchantment enchantment : requiredEnchantments.values()) {
+            if (enchantment.items.contains("ALL") || enchantment.items.contains("all") || enchantment.items.contains(itemStack.getType().name()))
                 return true;
         }
 
@@ -235,17 +234,33 @@ public final class EnchantingMissions extends Mission<EnchantingMissions.Enchant
     }
 
     private String parsePlaceholders(EnchantsTracker enchantsTracker, String line) {
-        Matcher matcher = percentagePattern.matcher(line);
+        Matcher matcher = doubleValuePattern.matcher(line);
 
         if (matcher.matches()) {
-            String requireditem = matcher.group(2).toUpperCase();
+            for (int i = 1; i <= 2; i++) {
+                String key = matcher.group(2 * i).toUpperCase();
 
-            Optional<Map.Entry<List<String>, RequiredEnchantment>> entry = requiredEnchantments.entrySet().stream()
-                    .filter(e -> e.getKey().contains(requireditem)).findAny();
+                Optional<Map.Entry<String, RequiredEnchantment>> entry = requiredEnchantments.entrySet().stream()
+                        .filter(e -> e.getKey().equalsIgnoreCase(key)).findAny();
 
-            if (entry.isPresent()) {
-                line = line.replace("{enchanted_" + matcher.group(2) + "}",
-                        enchantsTracker.getEnchanted(entry.get().getValue().key) > 0 ? enchantedPlaceholder : notEnchantedPlaceholder);
+                if (entry.isPresent()) {
+                    line = line.replace("{enchanted_" + matcher.group(2 * i) + "}",
+                            String.valueOf(enchantsTracker.getEnchanted(entry.get().getValue())));
+                }
+            }
+        } else {
+            matcher = valuePattern.matcher(line);
+
+            if (matcher.matches()) {
+                String key = matcher.group(2).toUpperCase();
+
+                Optional<Map.Entry<String, RequiredEnchantment>> entry = requiredEnchantments.entrySet().stream()
+                        .filter(e -> e.getKey().equalsIgnoreCase(key)).findAny();
+
+                if (entry.isPresent()) {
+                    line = line.replace("{enchanted_" + matcher.group(2) + "}",
+                            String.valueOf(enchantsTracker.getEnchanted(entry.get().getValue())));
+                }
             }
         }
 
@@ -254,13 +269,12 @@ public final class EnchantingMissions extends Mission<EnchantingMissions.Enchant
 
     public class EnchantsTracker {
 
-        private final Map<String, Integer> enchantsTracker = new HashMap<>();
+        private final Map<RequiredEnchantment, Integer> enchantsTracker = new HashMap<>();
 
         void track(SuperiorPlayer superiorPlayer, ItemStack itemStack, int enchantLevel) {
             outerLoop:
-            for (List<String> requiredItems : requiredEnchantments.keySet()) {
-                if (requiredItems.contains(itemStack.getType().name()) || requiredItems.contains("ALL") || requiredItems.contains("all")) {
-                    RequiredEnchantment requiredEnchantment = requiredEnchantments.get(requiredItems);
+            for (RequiredEnchantment requiredEnchantment : requiredEnchantments.values()) {
+                if (requiredEnchantment.items.contains(itemStack.getType().name()) || requiredEnchantment.items.contains("ALL") || requiredEnchantment.items.contains("all")) {
                     if (enchantLevel < requiredEnchantment.minLevel)
                         continue;
 
@@ -274,7 +288,7 @@ public final class EnchantingMissions extends Mission<EnchantingMissions.Enchant
                         }
                     }
 
-                    enchantsTracker.put(requiredEnchantment.key, getEnchanted(requiredEnchantment.key) + 1);
+                    enchantsTracker.put(requiredEnchantment, getEnchanted(requiredEnchantment) + 1);
                     if (enchBossBar.containsKey(requiredEnchantment))
                         sendBossBar(superiorPlayer, enchBossBar.get(requiredEnchantment), getProgress(superiorPlayer, requiredEnchantment), requiredEnchantment.amount, getProgress(superiorPlayer));
 
@@ -283,8 +297,8 @@ public final class EnchantingMissions extends Mission<EnchantingMissions.Enchant
             }
         }
 
-        int getEnchanted(String key) {
-            return enchantsTracker.getOrDefault(key, 0);
+        int getEnchanted(RequiredEnchantment enchantment) {
+            return enchantsTracker.getOrDefault(enchantment, 0);
         }
 
     }
@@ -292,12 +306,14 @@ public final class EnchantingMissions extends Mission<EnchantingMissions.Enchant
     private static class RequiredEnchantment {
 
         private final String key;
+        private final List<String> items;
         private final Map<Enchantment, Integer> enchantments;
         private final Integer amount;
         private final Integer minLevel;
 
-        RequiredEnchantment(String key, Map<Enchantment, Integer> enchantments, Integer amount, Integer minLevel) {
+        RequiredEnchantment(String key, List<String> items, Map<Enchantment, Integer> enchantments, Integer amount, Integer minLevel) {
             this.key = key;
+            this.items = items;
             this.enchantments = enchantments;
             this.amount = amount;
             this.minLevel = minLevel;
