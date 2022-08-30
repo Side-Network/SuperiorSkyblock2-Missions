@@ -34,7 +34,6 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -386,7 +385,7 @@ public final class FarmingMissions extends Mission<FarmingMissions.FarmingTracke
             Optional<Map.Entry<List<String>, Integer>> entry = requiredPlants.entrySet().stream().filter(e -> e.getKey().contains(requiredBlock)).findAny();
             if (entry.isPresent()) {
                 line = line.replace("{percentage_" + matcher.group(2) + "}",
-                        "" + (farmingTracker.getPlants(Collections.singletonList(requiredBlock)) * 100) / entry.get().getValue());
+                        "" + (farmingTracker.getPlants(entry.get().getKey()) * 100) / entry.get().getValue());
             }
         }
 
@@ -395,7 +394,7 @@ public final class FarmingMissions extends Mission<FarmingMissions.FarmingTracke
             Optional<Map.Entry<List<String>, Integer>> entry = requiredPlants.entrySet().stream().filter(e -> e.getKey().contains(requiredBlock)).findFirst();
             if (entry.isPresent()) {
                 line = line.replace("{value_" + matcher.group(2) + "}",
-                        "" + farmingTracker.getPlants(Collections.singletonList(requiredBlock)));
+                        "" + farmingTracker.getPlants(entry.get().getKey()));
             }
         }
 
@@ -411,12 +410,12 @@ public final class FarmingMissions extends Mission<FarmingMissions.FarmingTracke
             farmingTracker.put(blockType, newAmount);
         }
 
-        int getPlants(List<String> entities) {
+        int getPlants(List<String> plants) {
             int amount = 0;
-            boolean all = entities.contains("ALL") || entities.contains("all");
+            boolean all = plants.contains("ALL") || plants.contains("all");
 
             for (String entity : farmingTracker.keySet()) {
-                if (all || entities.contains(entity))
+                if (all || plants.contains(entity))
                     amount += farmingTracker.get(entity);
             }
 
