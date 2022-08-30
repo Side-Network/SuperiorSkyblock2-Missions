@@ -329,7 +329,7 @@ public final class BlocksMissions extends Mission<BlocksMissions.BlocksCounter> 
             return;
         }
 
-        if (isBarrel(e.getBlock()) || !superiorSkyblock.getMissions().hasAllRequiredMissions(superiorPlayer, this))
+        if (isBarrel(e.getBlock()) || !superiorSkyblock.getMissions().canCompleteNoProgress(superiorPlayer, this))
             return;
 
         handleBlockTrack(BlocksTracker.TrackingType.PLACED_BLOCKS, e.getPlayer(), e.getBlock(),
@@ -381,7 +381,7 @@ public final class BlocksMissions extends Mission<BlocksMissions.BlocksCounter> 
             blockInfo = new BlockInfo(block);
 
         if (isBarrel(block) || !isMissionBlock(blockInfo) ||
-                !superiorSkyblock.getMissions().hasAllRequiredMissions(superiorPlayer, this))
+                !superiorSkyblock.getMissions().canCompleteNoProgress(superiorPlayer, this))
             return;
 
         if (onlyNatural && BLOCKS_TRACKER.isTracked(BlocksTracker.TrackingType.PLACED_BLOCKS, block))

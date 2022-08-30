@@ -99,6 +99,7 @@ public final class BuyMissions extends Mission<BuyMissions.BuyTracker> implement
 
     public int getRequired(ItemStack itemStack) {
         ItemStack keyItem = itemStack.clone();
+        keyItem.setItemMeta(null);
         keyItem.setAmount(1);
 
         return this.itemsToBuy.getOrDefault(keyItem, 0);
@@ -188,7 +189,7 @@ public final class BuyMissions extends Mission<BuyMissions.BuyTracker> implement
         resultItem.setAmount(event.getResult().getAmount());
 
         SuperiorPlayer superiorPlayer = SuperiorSkyblockAPI.getPlayer(event.getResult().getPlayer());
-        if (!superiorSkyblock.getMissions().hasAllRequiredMissions(superiorPlayer, this))
+        if (!superiorSkyblock.getMissions().canCompleteNoProgress(superiorPlayer, this))
             return;
 
         trackItem(superiorPlayer, resultItem);
@@ -247,12 +248,14 @@ public final class BuyMissions extends Mission<BuyMissions.BuyTracker> implement
 
         void trackItem(ItemStack itemStack) {
             ItemStack keyItem = itemStack.clone();
+            keyItem.setItemMeta(null);
             keyItem.setAmount(1);
             boughtItems.put(keyItem, boughtItems.getOrDefault(keyItem, 0) + itemStack.getAmount());
         }
 
         int getBought(ItemStack itemStack) {
             ItemStack keyItem = itemStack.clone();
+            keyItem.setItemMeta(null);
             keyItem.setAmount(1);
             return boughtItems.getOrDefault(keyItem, 0);
         }

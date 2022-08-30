@@ -318,7 +318,7 @@ public final class FarmingMissions extends Mission<FarmingMissions.FarmingTracke
             superiorPlayer = SuperiorSkyblockAPI.getPlayer(placerUUID);
         }
 
-        if (!superiorSkyblock.getMissions().hasAllRequiredMissions(superiorPlayer, this))
+        if (!superiorSkyblock.getMissions().canCompleteNoProgress(superiorPlayer, this))
             return;
 
         FarmingTracker farmingTracker = getOrCreate(superiorPlayer, s -> new FarmingTracker());

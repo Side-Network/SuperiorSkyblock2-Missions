@@ -204,7 +204,7 @@ public final class KillsMissions extends Mission<KillsMissions.KillsTracker> imp
 
         SuperiorPlayer superiorPlayer = SuperiorSkyblockAPI.getPlayer(damager);
 
-        if (!superiorSkyblock.getMissions().hasAllRequiredMissions(superiorPlayer, this))
+        if (!superiorSkyblock.getMissions().canCompleteNoProgress(superiorPlayer, this))
             return;
 
         KillsTracker killsTracker = getOrCreate(superiorPlayer, s -> new KillsTracker());

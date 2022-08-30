@@ -224,7 +224,7 @@ public final class SellMissions extends Mission<SellMissions.SellTracker> implem
         resultItem.setAmount(event.getResult().getAmount());
 
         SuperiorPlayer superiorPlayer = SuperiorSkyblockAPI.getPlayer(event.getResult().getPlayer());
-        if (!superiorSkyblock.getMissions().hasAllRequiredMissions(superiorPlayer, this))
+        if (!superiorSkyblock.getMissions().canCompleteNoProgress(superiorPlayer, this))
             return;
 
         trackItem(superiorPlayer, resultItem);
@@ -243,7 +243,7 @@ public final class SellMissions extends Mission<SellMissions.SellTracker> implem
         resultItem.setAmount(event.getAmount());
 
         SuperiorPlayer superiorPlayer = SuperiorSkyblockAPI.getPlayer(event.getPlayer());
-        if (!superiorSkyblock.getMissions().hasAllRequiredMissions(superiorPlayer, this))
+        if (!superiorSkyblock.getMissions().canCompleteNoProgress(superiorPlayer, this))
             return;
 
         trackItem(superiorPlayer, resultItem);
