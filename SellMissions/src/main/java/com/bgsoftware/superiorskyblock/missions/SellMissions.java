@@ -233,6 +233,9 @@ public final class SellMissions extends Mission<SellMissions.SellTracker> implem
     @EventHandler(ignoreCancelled = true)
     public void onScytherAutoSell(ScytherAutosellEvent event) {
         Material mat = event.getCropMaterial();
+        if (mat == null)
+            return;
+
         switch (mat) {
             case BAMBOO -> mat = Material.BAMBOO_SAPLING;
             case CARROTS -> mat = Material.CARROT;
