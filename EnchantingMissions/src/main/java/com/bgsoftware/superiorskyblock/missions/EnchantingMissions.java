@@ -89,7 +89,7 @@ public final class EnchantingMissions extends Mission<EnchantingMissions.Enchant
 
         for (RequiredEnchantment requiredEnchantment : this.requiredEnchantments.values()) {
             requiredItems += requiredEnchantment.amount;
-            enchants += enchantsTracker.getEnchanted(requiredEnchantment);
+            enchants += Math.min(enchantsTracker.getEnchanted(requiredEnchantment), requiredEnchantment.amount);
         }
 
         return (double) enchants / requiredItems;
@@ -105,7 +105,7 @@ public final class EnchantingMissions extends Mission<EnchantingMissions.Enchant
         int enchants = 0;
 
         for (RequiredEnchantment requiredEnchantment : this.requiredEnchantments.values()) {
-            enchants += enchantsTracker.getEnchanted(requiredEnchantment);
+            enchants += Math.min(enchantsTracker.getEnchanted(requiredEnchantment), requiredEnchantment.amount);
         }
 
         return enchants;
@@ -116,7 +116,7 @@ public final class EnchantingMissions extends Mission<EnchantingMissions.Enchant
         if (enchantsTracker == null)
             return 0;
 
-        return enchantsTracker.getEnchanted(requiredEnchantment);
+        return Math.min(enchantsTracker.getEnchanted(requiredEnchantment), requiredEnchantment.amount);
     }
 
     @Override
@@ -245,7 +245,7 @@ public final class EnchantingMissions extends Mission<EnchantingMissions.Enchant
 
                 if (entry.isPresent()) {
                     line = line.replace("{enchanted_" + matcher.group(2 * i) + "}",
-                            String.valueOf(enchantsTracker.getEnchanted(entry.get().getValue())));
+                            String.valueOf(Math.min(enchantsTracker.getEnchanted(entry.get().getValue()), entry.get().getValue().amount)));
                 }
             }
         } else {
@@ -259,7 +259,7 @@ public final class EnchantingMissions extends Mission<EnchantingMissions.Enchant
 
                 if (entry.isPresent()) {
                     line = line.replace("{enchanted_" + matcher.group(2) + "}",
-                            String.valueOf(enchantsTracker.getEnchanted(entry.get().getValue())));
+                            String.valueOf(Math.min(enchantsTracker.getEnchanted(entry.get().getValue()), entry.get().getValue().amount)));
                 }
             }
         }
@@ -288,11 +288,10 @@ public final class EnchantingMissions extends Mission<EnchantingMissions.Enchant
                         }
                     }
 
+                    boolean bossBar = getEnchanted(requiredEnchantment) < requiredEnchantment.amount;
                     enchantsTracker.put(requiredEnchantment, getEnchanted(requiredEnchantment) + 1);
-                    if (enchBossBar.containsKey(requiredEnchantment))
+                    if (bossBar && enchBossBar.containsKey(requiredEnchantment))
                         sendBossBar(superiorPlayer, enchBossBar.get(requiredEnchantment), getProgress(superiorPlayer, requiredEnchantment), requiredEnchantment.amount, getProgress(superiorPlayer));
-
-                    break;
                 }
             }
         }
