@@ -141,7 +141,7 @@ public final class BlocksMissions extends Mission<BlocksMissions.BlocksCounter> 
         if (blocksCounter == null)
             return 0;
 
-        return blocksCounter.getBlocksCount(type);
+        return blocksCounter.getBlocksCount(requiredBlocks, type);
     }
 
     @Override
@@ -427,6 +427,8 @@ public final class BlocksMissions extends Mission<BlocksMissions.BlocksCounter> 
             return;
 
         BlocksCounter blocksCounter = getOrCreate(superiorPlayer, s -> new BlocksCounter());
+        if (blocksCounter == null)
+            return;
 
         BLOCKS_TRACKER.trackBlock(trackingType, block);
 
@@ -481,7 +483,7 @@ public final class BlocksMissions extends Mission<BlocksMissions.BlocksCounter> 
             Optional<Map.Entry<List<String>, Integer>> entry = requiredBlocks.entrySet().stream().filter(e -> e.getKey().contains(requiredBlock)).findAny();
             if (entry.isPresent()) {
                 line = line.replace("{percentage_" + matcher.group(2) + "}",
-                        "" + (blocksCounter.getBlocksCount(requiredBlock) * 100) / entry.get().getValue());
+                        "" + (blocksCounter.getBlocksCount(requiredBlocks, requiredBlock) * 100) / entry.get().getValue());
             }
         }
 
@@ -490,7 +492,7 @@ public final class BlocksMissions extends Mission<BlocksMissions.BlocksCounter> 
             Optional<Map.Entry<List<String>, Integer>> entry = requiredBlocks.entrySet().stream().filter(e -> e.getKey().contains(requiredBlock)).findFirst();
             if (entry.isPresent()) {
                 line = line.replace("{value_" + matcher.group(2) + "}",
-                        "" + blocksCounter.getBlocksCount(requiredBlock));
+                        "" + blocksCounter.getBlocksCount(requiredBlocks, requiredBlock));
             }
         }
 
@@ -524,6 +526,20 @@ public final class BlocksMissions extends Mission<BlocksMissions.BlocksCounter> 
 
         void loadBlockCount(String blockKey, int amount) {
             this.trackedBlockCounts.put(blockKey, amount);
+        }
+
+        int getBlocksCount(Map<List<String>, Integer> required, String blockKey) {
+            int amount = 0;
+
+            for (Map.Entry<List<String>, Integer> entry : required.entrySet()) {
+                if (entry.getKey().contains(blockKey)) {
+                    for (String key : entry.getKey()) {
+                        amount += this.trackedBlockCounts.getOrDefault(key, 0);
+                    }
+                }
+            }
+
+            return amount;
         }
 
         int getBlocksCount(String blockKey) {
