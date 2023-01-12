@@ -20,26 +20,16 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
-import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockGrowEvent;
-import org.bukkit.event.block.BlockPistonExtendEvent;
-import org.bukkit.event.block.BlockPistonRetractEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.block.BlockSpreadEvent;
-import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.world.StructureGrowEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import javax.annotation.Nullable;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.UUID;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -73,7 +63,6 @@ public final class FarmingMissions extends Mission<FarmingMissions.FarmingTracke
 
     private JavaPlugin plugin;
     private final Map<List<String>, Integer> requiredPlants = new HashMap<>();
-    private final Map<BlockPosition, UUID> playerPlacedPlants = new HashMap<>();
     private boolean resetAfterFinish;
 
     @Override
@@ -146,9 +135,6 @@ public final class FarmingMissions extends Mission<FarmingMissions.FarmingTracke
                 section.set("grown-plants." + uuid + "." + brokenEntry.getKey(), brokenEntry.getValue());
             }
         }
-        for (Map.Entry<BlockPosition, UUID> placedBlock : playerPlacedPlants.entrySet()) {
-            section.set("placed-plants." + placedBlock.getKey().serialize(), placedBlock.getValue().toString());
-        }
     }
 
     @Override
@@ -164,18 +150,6 @@ public final class FarmingMissions extends Mission<FarmingMissions.FarmingTracke
 
                 for (String key : grownPlants.getConfigurationSection(uuid).getKeys(false)) {
                     farmingTracker.farmingTracker.put(key, grownPlants.getInt(uuid + "." + key));
-                }
-            }
-        }
-
-        ConfigurationSection placedPlants = section.getConfigurationSection("placed-plants");
-        if (placedPlants != null) {
-            for (String locationKey : placedPlants.getKeys(false)) {
-                BlockPosition blockPosition = BlockPosition.deserialize(locationKey);
-                try {
-                    if (blockPosition != null)
-                        playerPlacedPlants.put(blockPosition, UUID.fromString(placedPlants.getString(locationKey)));
-                } catch (IllegalArgumentException ignored) {
                 }
             }
         }
@@ -226,31 +200,6 @@ public final class FarmingMissions extends Mission<FarmingMissions.FarmingTracke
 
         if (placerUUID == null)
             return;
-
-        playerPlacedPlants.put(BlockPosition.fromBlock(e.getBlock()), placerUUID);
-    }
-
-    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
-    public void onBlockBreak(BlockBreakEvent e) {
-        playerPlacedPlants.remove(BlockPosition.fromBlock(e.getBlock()));
-    }
-
-    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
-    public void onBlockExplode(EntityExplodeEvent e) {
-        for (Block block : e.blockList())
-            playerPlacedPlants.remove(BlockPosition.fromBlock(block));
-    }
-
-    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
-    public void onPistonRetract(BlockPistonRetractEvent e) {
-        for (Block block : e.getBlocks())
-            playerPlacedPlants.remove(BlockPosition.fromBlock(block));
-    }
-
-    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
-    public void onPistonRetract(BlockPistonExtendEvent e) {
-        for (Block block : e.getBlocks())
-            playerPlacedPlants.remove(BlockPosition.fromBlock(block));
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -304,22 +253,16 @@ public final class FarmingMissions extends Mission<FarmingMissions.FarmingTracke
                 break;
         }
 
-        UUID placerUUID = playerPlacedPlants.get(BlockPosition.fromLocation(placedBlockLocation));
-
-        if (placerUUID == null)
-            return;
-
         SuperiorPlayer superiorPlayer;
+        Island island = SuperiorSkyblockAPI.getIslandAt(placedBlockLocation);
 
         if (getIslandMission()) {
-            Island island = SuperiorSkyblockAPI.getIslandByUUID(placerUUID);
-
             if (island == null)
                 return;
 
             superiorPlayer = island.getOwner();
         } else {
-            superiorPlayer = SuperiorSkyblockAPI.getPlayer(placerUUID);
+            return;
         }
 
         if (!superiorSkyblock.getMissions().canCompleteNoProgress(superiorPlayer, this))
