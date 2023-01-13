@@ -165,7 +165,7 @@ public final class FishingMissions extends Mission<FishingMissions.FishingTracke
             String uuid = entry.getKey().getUniqueId().toString();
             int index = 0;
             for (Map.Entry<Material, Integer> craftedEntry : entry.getValue().caughtItems.entrySet()) {
-                section.set(uuid + "." + index + ".item", craftedEntry.getKey());
+                section.set(uuid + "." + index + ".item", craftedEntry.getKey().name());
                 section.set(uuid + "." + index + ".amount", craftedEntry.getValue());
                 index++;
             }
@@ -186,11 +186,15 @@ public final class FishingMissions extends Mission<FishingMissions.FishingTracke
 
             for (String key : section.getConfigurationSection(uuid).getKeys(false)) {
                 Material material;
-                String mat = section.getString(uuid + "." + key + ".item");
                 try {
+                    String mat = section.getString(uuid + "." + key + ".item");
                     material = Material.valueOf(mat);
                 } catch (IllegalArgumentException ex) {
-                    continue;
+                    ItemStack oldItem = section.getItemStack(uuid + "." + key + ".item");
+                    if (oldItem == null)
+                        continue;
+
+                    material = oldItem.getType();
                 }
                 int amount = section.getInt(uuid + "." + key + ".amount");
                 fishingTracker.caughtItems.put(material, amount);
