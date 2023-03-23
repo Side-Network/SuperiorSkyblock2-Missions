@@ -7,6 +7,7 @@ import com.bgsoftware.superiorskyblock.api.missions.Mission;
 import com.bgsoftware.superiorskyblock.api.missions.MissionLoadException;
 import com.bgsoftware.superiorskyblock.api.wrappers.SuperiorPlayer;
 import com.google.common.collect.ImmutableMap;
+import lv.side.sidecrops.events.CropRipeEvent;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
@@ -27,8 +28,8 @@ import org.bukkit.event.world.StructureGrowEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.jetbrains.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -90,15 +91,15 @@ public final class FarmingMissions extends Mission<FarmingMissions.FarmingTracke
         if (farmingTracker == null)
             return 0.0;
 
-        int requiredEntities = 0;
-        int kills = 0;
+        int requiredPlants = 0;
+        int progress = 0;
 
         for (Map.Entry<List<String>, Integer> requiredPlant : this.requiredPlants.entrySet()) {
-            requiredEntities += requiredPlant.getValue();
-            kills += Math.min(farmingTracker.getPlants(requiredPlant.getKey()), requiredPlant.getValue());
+            requiredPlants += requiredPlant.getValue();
+            progress += Math.min(farmingTracker.getPlants(requiredPlant.getKey()), requiredPlant.getValue());
         }
 
-        return (double) kills / requiredEntities;
+        return (double) progress / requiredPlants;
     }
 
     @Override
@@ -108,12 +109,12 @@ public final class FarmingMissions extends Mission<FarmingMissions.FarmingTracke
         if (farmingTracker == null)
             return 0;
 
-        int kills = 0;
+        int progress = 0;
 
         for (Map.Entry<List<String>, Integer> requiredPlant : this.requiredPlants.entrySet())
-            kills += Math.min(farmingTracker.getPlants(requiredPlant.getKey()), requiredPlant.getValue());
+            progress += Math.min(farmingTracker.getPlants(requiredPlant.getKey()), requiredPlant.getValue());
 
-        return kills;
+        return progress;
     }
 
     @Override
@@ -216,6 +217,41 @@ public final class FarmingMissions extends Mission<FarmingMissions.FarmingTracke
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPlantGrow(BlockGrowEvent e) {
         handlePlantGrow(e.getBlock(), e.getNewState());
+    }
+
+    @EventHandler
+    public void onCustomCropRipe(CropRipeEvent e) {
+        String blockTypeName = "CUSTOM;" + e.getCropType().getId();
+
+        if (!isMissionPlant(blockTypeName))
+            return;
+
+        SuperiorPlayer superiorPlayer;
+        Island island = e.getIsland();
+
+        if (getIslandMission()) {
+            if (island == null)
+                return;
+
+            superiorPlayer = island.getOwner();
+        } else {
+            return;
+        }
+
+        if (!superiorSkyblock.getMissions().canCompleteNoProgress(superiorPlayer, this))
+            return;
+
+        FarmingTracker farmingTracker = getOrCreate(superiorPlayer, s -> new FarmingTracker());
+
+        if (farmingTracker == null)
+            return;
+
+        farmingTracker.track(blockTypeName);
+
+        Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, () -> superiorPlayer.runIfOnline(player -> {
+            if (canComplete(superiorPlayer))
+                SuperiorSkyblockAPI.getSuperiorSkyblock().getMissions().rewardMission(this, superiorPlayer, true);
+        }), 2L);
     }
 
     private void handlePlantGrow(Block plantBlock, BlockState newState) {
@@ -325,7 +361,10 @@ public final class FarmingMissions extends Mission<FarmingMissions.FarmingTracke
 
         if (matcher.matches()) {
             String requiredBlock = matcher.group(2).toUpperCase();
-            Optional<Map.Entry<List<String>, Integer>> entry = requiredPlants.entrySet().stream().filter(e -> e.getKey().contains(requiredBlock)).findAny();
+            String requiredCustomBlock = matcher.group(2);
+            Optional<Map.Entry<List<String>, Integer>> entry = requiredPlants.entrySet().stream().filter(e ->
+                    e.getKey().contains(requiredBlock) || e.getKey().contains(requiredCustomBlock)
+            ).findAny();
             if (entry.isPresent()) {
                 line = line.replace("{percentage_" + matcher.group(2) + "}",
                         "" + (farmingTracker.getPlants(entry.get().getKey()) * 100) / entry.get().getValue());
@@ -334,7 +373,10 @@ public final class FarmingMissions extends Mission<FarmingMissions.FarmingTracke
 
         if ((matcher = valuePattern.matcher(line)).matches()) {
             String requiredBlock = matcher.group(2).toUpperCase();
-            Optional<Map.Entry<List<String>, Integer>> entry = requiredPlants.entrySet().stream().filter(e -> e.getKey().contains(requiredBlock)).findFirst();
+            String requiredCustomBlock = matcher.group(2);
+            Optional<Map.Entry<List<String>, Integer>> entry = requiredPlants.entrySet().stream().filter(e ->
+                    e.getKey().contains(requiredBlock) || e.getKey().contains(requiredCustomBlock)
+            ).findFirst();
             if (entry.isPresent()) {
                 line = line.replace("{value_" + matcher.group(2) + "}",
                         "" + farmingTracker.getPlants(entry.get().getKey()));
@@ -357,9 +399,9 @@ public final class FarmingMissions extends Mission<FarmingMissions.FarmingTracke
             int amount = 0;
             boolean all = plants.contains("ALL") || plants.contains("all");
 
-            for (String entity : farmingTracker.keySet()) {
-                if (all || plants.contains(entity))
-                    amount += farmingTracker.get(entity);
+            for (String plant : farmingTracker.keySet()) {
+                if (all || plants.contains(plant))
+                    amount += farmingTracker.get(plant);
             }
 
             return amount;

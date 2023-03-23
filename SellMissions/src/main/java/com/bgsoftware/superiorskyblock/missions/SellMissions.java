@@ -5,7 +5,9 @@ import com.bgsoftware.superiorskyblock.api.SuperiorSkyblockAPI;
 import com.bgsoftware.superiorskyblock.api.missions.Mission;
 import com.bgsoftware.superiorskyblock.api.missions.MissionLoadException;
 import com.bgsoftware.superiorskyblock.api.wrappers.SuperiorPlayer;
-import dev.norska.scyther.api.ScytherAutosellEvent;
+import lv.side.sidecrops.events.CropHarvesterEvent;
+import lv.side.sidecrops.managers.CropManager;
+import lv.side.sidecrops.objects.CropType;
 import net.brcdev.shopgui.event.ShopPostTransactionEvent;
 import net.brcdev.shopgui.shop.ShopManager;
 import net.brcdev.shopgui.shop.ShopTransactionResult;
@@ -32,7 +34,9 @@ public final class SellMissions extends Mission<SellMissions.SellTracker> implem
             valuePattern = Pattern.compile("(.*)\\{value_(.+?)}(.*)");
 
     private final Map<List<ItemStack>, Integer> itemsToSell = new HashMap<>();
+    private final Map<List<String>, Integer> customItemsToSell = new HashMap<>();
     private final Map<Material, String> itemsBossBar = new HashMap<>();
+    private final Map<String, String> customItemsBossBar = new HashMap<>();
 
     private JavaPlugin plugin;
 
@@ -48,6 +52,7 @@ public final class SellMissions extends Mission<SellMissions.SellTracker> implem
             int amount = section.getInt("sell-items." + key + ".amount", 1);
 
             List<ItemStack> itemsToSell = new ArrayList<>();
+            List<String> customItemsToSell = new ArrayList<>();
 
             for(String itemType : itemTypes) {
                 byte data = 0;
@@ -62,21 +67,29 @@ public final class SellMissions extends Mission<SellMissions.SellTracker> implem
                     }
                 }
 
-                Material material;
+                if (!itemType.contains("-")) {
+                    Material material;
 
-                try {
-                    material = Material.valueOf(itemType);
-                } catch (IllegalArgumentException ex) {
-                    throw new MissionLoadException("Invalid sell item " + itemType + ".");
+                    try {
+                        material = Material.valueOf(itemType);
+                    } catch (IllegalArgumentException ex) {
+                        throw new MissionLoadException("Invalid sell item " + itemType + ".");
+                    }
+
+                    itemsToSell.add(new ItemStack(material, 1, data));
+                } else {
+                    customItemsToSell.add(itemType);
                 }
-
-                itemsToSell.add(new ItemStack(material, 1, data));
             }
 
             this.itemsToSell.put(itemsToSell, amount);
+            this.customItemsToSell.put(customItemsToSell, amount);
             String bossBar = section.getString("sell-items." + key + ".boss-bar", "?");
-            for (ItemStack toCatch : itemsToSell) {
-                itemsBossBar.put(toCatch.getType(), bossBar);
+            for (ItemStack toSell : itemsToSell) {
+                itemsBossBar.put(toSell.getType(), bossBar);
+            }
+            for (String toSell : customItemsToSell) {
+                customItemsBossBar.put(toSell, bossBar);
             }
         }
 
@@ -99,6 +112,10 @@ public final class SellMissions extends Mission<SellMissions.SellTracker> implem
             requiredItems += entry.getValue();
             interactions += Math.min(sellTracker.getSold(entry.getKey()), entry.getValue());
         }
+        for (Map.Entry<List<String>, Integer> entry : this.customItemsToSell.entrySet()) {
+            requiredItems += entry.getValue();
+            interactions += Math.min(sellTracker.getCustomSold(entry.getKey()), entry.getValue());
+        }
 
         return (double) interactions / requiredItems;
     }
@@ -115,6 +132,9 @@ public final class SellMissions extends Mission<SellMissions.SellTracker> implem
         for (Map.Entry<List<ItemStack>, Integer> entry : this.itemsToSell.entrySet())
             interactions += Math.min(sellTracker.getSold(entry.getKey()), entry.getValue());
 
+        for (Map.Entry<List<String>, Integer> entry : this.customItemsToSell.entrySet())
+            interactions += Math.min(sellTracker.getCustomSold(entry.getKey()), entry.getValue());
+
         return interactions;
     }
 
@@ -124,6 +144,15 @@ public final class SellMissions extends Mission<SellMissions.SellTracker> implem
 
         for (Map.Entry<List<ItemStack>, Integer> entry : this.itemsToSell.entrySet()) {
             if (entry.getKey().contains(keyItem))
+                return entry.getValue();
+        }
+
+        return 0;
+    }
+
+    public int getRequired(String item) {
+        for (Map.Entry<List<String>, Integer> entry : this.customItemsToSell.entrySet()) {
+            if (entry.getKey().contains(item))
                 return entry.getValue();
         }
 
@@ -143,6 +172,22 @@ public final class SellMissions extends Mission<SellMissions.SellTracker> implem
             if (!entry.getKey().contains(keyItem))
                 continue;
             progress += sellTracker.getSold(entry.getKey());
+        }
+
+        return progress;
+    }
+
+    public int getProgress(SuperiorPlayer superiorPlayer, String item) {
+        SellTracker sellTracker = get(superiorPlayer);
+        if (sellTracker == null)
+            return 0;
+
+        int progress = 0;
+
+        for (Map.Entry<List<String>, Integer> entry : this.customItemsToSell.entrySet()) {
+            if (!entry.getKey().contains(item))
+                continue;
+            progress += sellTracker.getCustomSold(entry.getKey());
         }
 
         return progress;
@@ -168,6 +213,11 @@ public final class SellMissions extends Mission<SellMissions.SellTracker> implem
                 section.set(uuid + "." + index + ".amount", craftedEntry.getValue());
                 index++;
             }
+            for (Map.Entry<String, Integer> craftedEntry : entry.getValue().soldCustomItems.entrySet()) {
+                section.set(uuid + "." + index + ".custom-item", craftedEntry.getKey());
+                section.set(uuid + "." + index + ".amount", craftedEntry.getValue());
+                index++;
+            }
         }
     }
 
@@ -184,9 +234,15 @@ public final class SellMissions extends Mission<SellMissions.SellTracker> implem
             insertData(superiorPlayer, sellTracker);
 
             for (String key : section.getConfigurationSection(uuid).getKeys(false)) {
-                ItemStack itemStack = section.getItemStack(uuid + "." + key + ".item");
-                int amount = section.getInt(uuid + "." + key + ".amount");
-                sellTracker.soldItems.put(itemStack, amount);
+                if (section.contains(uuid + "." + key + ".custom-item")) {
+                    String item = section.getString(uuid + "." + key + ".custom-item");
+                    int amount = section.getInt(uuid + "." + key + ".amount");
+                    sellTracker.soldCustomItems.put(item, amount);
+                } else {
+                    ItemStack itemStack = section.getItemStack(uuid + "." + key + ".item");
+                    int amount = section.getInt(uuid + "." + key + ".amount");
+                    sellTracker.soldItems.put(itemStack, amount);
+                }
             }
         }
     }
@@ -227,29 +283,28 @@ public final class SellMissions extends Mission<SellMissions.SellTracker> implem
         if (!superiorSkyblock.getMissions().canCompleteNoProgress(superiorPlayer, this))
             return;
 
+        if (resultItem.getType() == Material.PHANTOM_MEMBRANE) {
+            for (CropType cropType : CropManager.get().getCropTypes().values()) {
+                for (Map.Entry<Integer, ItemStack> entry : cropType.getProduce().entrySet()) {
+                    if (entry.getValue().getItemMeta().getDisplayName().equalsIgnoreCase(resultItem.getItemMeta().getDisplayName())) {
+                        trackItem(superiorPlayer, cropType.getId() + "-" + entry.getKey(), resultItem.getAmount());
+                        return;
+                    }
+                }
+            }
+            return;
+        }
+
         trackItem(superiorPlayer, resultItem);
     }
 
     @EventHandler(ignoreCancelled = true)
-    public void onScytherAutoSell(ScytherAutosellEvent event) {
-        Material mat = event.getCropMaterial();
-        if (mat == null)
-            return;
-
-        switch (mat) {
-            case BAMBOO -> mat = Material.BAMBOO_SAPLING;
-            case CARROTS -> mat = Material.CARROT;
-            case POTATOES -> mat = Material.POTATO;
-            case COCOA_BEANS -> mat = Material.COCOA;
-        }
-        ItemStack resultItem = new ItemStack(mat);
-        resultItem.setAmount(event.getAmount());
-
+    public void onScytherAutoSell(CropHarvesterEvent event) {
         SuperiorPlayer superiorPlayer = SuperiorSkyblockAPI.getPlayer(event.getPlayer());
         if (!superiorSkyblock.getMissions().canCompleteNoProgress(superiorPlayer, this))
             return;
 
-        trackItem(superiorPlayer, resultItem);
+        trackItem(superiorPlayer, event.getProduce(), 1);
     }
 
     private void trackItem(SuperiorPlayer superiorPlayer, ItemStack itemStack) {
@@ -267,19 +322,45 @@ public final class SellMissions extends Mission<SellMissions.SellTracker> implem
         }), 2L);
     }
 
+    private void trackItem(SuperiorPlayer superiorPlayer, String item, int amount) {
+        SellTracker sellTracker = getOrCreate(superiorPlayer, s -> new SellTracker());
+        if (sellTracker == null)
+            return;
+
+        sellTracker.trackItem(item, amount);
+        if (customItemsBossBar.containsKey(item))
+            sendBossBar(superiorPlayer, customItemsBossBar.get(item), getProgress(superiorPlayer, item), getRequired(item), getProgress(superiorPlayer));
+
+        Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, () -> superiorPlayer.runIfOnline(player -> {
+            if (canComplete(superiorPlayer))
+                SuperiorSkyblockAPI.getSuperiorSkyblock().getMissions().rewardMission(this, superiorPlayer, true);
+        }), 2L);
+    }
+
     private String parsePlaceholders(SellTracker sellTracker, String line) {
         Matcher matcher = percentagePattern.matcher(line);
 
         if (matcher.matches()) {
             try {
-                String requiredItem = matcher.group(2).toUpperCase();
-                ItemStack itemStack = new ItemStack(Material.valueOf(requiredItem));
-                Optional<Map.Entry<List<ItemStack>, Integer>> entry = itemsToSell.entrySet().stream()
-                        .filter(e -> e.getKey().contains(itemStack)).findAny();
+                if (matcher.group(2).contains("-")) {
+                    String requiredItem = matcher.group(2);
+                    Optional<Map.Entry<List<String>, Integer>> entry = customItemsToSell.entrySet().stream()
+                            .filter(e -> e.getKey().contains(requiredItem)).findAny();
 
-                if (entry.isPresent()) {
-                    line = line.replace("{percentage_" + matcher.group(2) + "}",
-                            "" + (sellTracker.getSold(entry.get().getKey()) * 100) / entry.get().getValue());
+                    if (entry.isPresent()) {
+                        line = line.replace("{percentage_" + matcher.group(2) + "}",
+                                "" + (sellTracker.getCustomSold(entry.get().getKey()) * 100) / entry.get().getValue());
+                    }
+                } else {
+                    String requiredItem = matcher.group(2).toUpperCase();
+                    ItemStack itemStack = new ItemStack(Material.valueOf(requiredItem));
+                    Optional<Map.Entry<List<ItemStack>, Integer>> entry = itemsToSell.entrySet().stream()
+                            .filter(e -> e.getKey().contains(itemStack)).findAny();
+
+                    if (entry.isPresent()) {
+                        line = line.replace("{percentage_" + matcher.group(2) + "}",
+                                "" + (sellTracker.getSold(entry.get().getKey()) * 100) / entry.get().getValue());
+                    }
                 }
             } catch (Exception ignored) {
             }
@@ -287,14 +368,25 @@ public final class SellMissions extends Mission<SellMissions.SellTracker> implem
 
         if ((matcher = valuePattern.matcher(line)).matches()) {
             try {
-                String requiredBlock = matcher.group(2).toUpperCase();
-                ItemStack itemStack = new ItemStack(Material.valueOf(requiredBlock));
-                Optional<Map.Entry<List<ItemStack>, Integer>> entry = itemsToSell.entrySet().stream()
-                        .filter(e -> e.getKey().contains(itemStack)).findAny();
+                if (matcher.group(2).contains("-")) {
+                    String requiredBlock = matcher.group(2);
+                    Optional<Map.Entry<List<String>, Integer>> entry = customItemsToSell.entrySet().stream()
+                            .filter(e -> e.getKey().contains(requiredBlock)).findAny();
 
-                if (entry.isPresent()) {
-                    line = line.replace("{value_" + matcher.group(2) + "}",
-                            "" + (sellTracker.getSold(entry.get().getKey())));
+                    if (entry.isPresent()) {
+                        line = line.replace("{value_" + matcher.group(2) + "}",
+                                "" + (sellTracker.getCustomSold(entry.get().getKey())));
+                    }
+                } else {
+                    String requiredBlock = matcher.group(2).toUpperCase();
+                    ItemStack itemStack = new ItemStack(Material.valueOf(requiredBlock));
+                    Optional<Map.Entry<List<ItemStack>, Integer>> entry = itemsToSell.entrySet().stream()
+                            .filter(e -> e.getKey().contains(itemStack)).findAny();
+
+                    if (entry.isPresent()) {
+                        line = line.replace("{value_" + matcher.group(2) + "}",
+                                "" + (sellTracker.getSold(entry.get().getKey())));
+                    }
                 }
             } catch (Exception ignored) {
             }
@@ -306,6 +398,7 @@ public final class SellMissions extends Mission<SellMissions.SellTracker> implem
     public static class SellTracker {
 
         private final Map<ItemStack, Integer> soldItems = new HashMap<>();
+        private final Map<String, Integer> soldCustomItems = new HashMap<>();
 
         void trackItem(ItemStack itemStack) {
             ItemStack keyItem = itemStack.clone();
@@ -313,14 +406,28 @@ public final class SellMissions extends Mission<SellMissions.SellTracker> implem
             soldItems.put(keyItem, soldItems.getOrDefault(keyItem, 0) + itemStack.getAmount());
         }
 
+        void trackItem(String item, int amount) {
+            soldCustomItems.put(item, soldCustomItems.getOrDefault(item, 0) + amount);
+        }
+
         int getSold(List<ItemStack> itemStacks) {
-            int caughts = 0;
+            int sold = 0;
 
             for (ItemStack itemStack : itemStacks) {
-                caughts += soldItems.getOrDefault(itemStack, 0);
+                sold += soldItems.getOrDefault(itemStack, 0);
             }
 
-            return caughts;
+            return sold;
+        }
+
+        int getCustomSold(List<String> itemStacks) {
+            int sold = 0;
+
+            for (String itemStack : itemStacks) {
+                sold += soldCustomItems.getOrDefault(itemStack, 0);
+            }
+
+            return sold;
         }
 
     }

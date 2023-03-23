@@ -4,4 +4,5 @@ dependencies {
     compileOnly 'com.bgsoftware:WildStackerAPI:3.6.3'
     compileOnly(files("ShopGUIPlus-1.78.0.jar"))
     compileOnly(files("Scyther Build 55a.jar"))
+    compileOnly(files("SideCrops.jar"))
 }
