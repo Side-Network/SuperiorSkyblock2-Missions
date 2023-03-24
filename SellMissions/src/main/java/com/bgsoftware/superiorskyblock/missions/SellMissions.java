@@ -109,10 +109,14 @@ public final class SellMissions extends Mission<SellMissions.SellTracker> implem
         int interactions = 0;
 
         for (Map.Entry<List<ItemStack>, Integer> entry : this.itemsToSell.entrySet()) {
+            if (entry.getKey().isEmpty())
+                continue;
             requiredItems += entry.getValue();
             interactions += Math.min(sellTracker.getSold(entry.getKey()), entry.getValue());
         }
         for (Map.Entry<List<String>, Integer> entry : this.customItemsToSell.entrySet()) {
+            if (entry.getKey().isEmpty())
+                continue;
             requiredItems += entry.getValue();
             interactions += Math.min(sellTracker.getCustomSold(entry.getKey()), entry.getValue());
         }
@@ -129,11 +133,17 @@ public final class SellMissions extends Mission<SellMissions.SellTracker> implem
 
         int interactions = 0;
 
-        for (Map.Entry<List<ItemStack>, Integer> entry : this.itemsToSell.entrySet())
+        for (Map.Entry<List<ItemStack>, Integer> entry : this.itemsToSell.entrySet()) {
+            if (entry.getKey().isEmpty())
+                continue;
             interactions += Math.min(sellTracker.getSold(entry.getKey()), entry.getValue());
+        }
 
-        for (Map.Entry<List<String>, Integer> entry : this.customItemsToSell.entrySet())
+        for (Map.Entry<List<String>, Integer> entry : this.customItemsToSell.entrySet()) {
+            if (entry.getKey().isEmpty())
+                continue;
             interactions += Math.min(sellTracker.getCustomSold(entry.getKey()), entry.getValue());
+        }
 
         return interactions;
     }
