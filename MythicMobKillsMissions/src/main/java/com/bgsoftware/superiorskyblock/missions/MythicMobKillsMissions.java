@@ -207,7 +207,7 @@ public final class MythicMobKillsMissions extends Mission<MythicMobKillsMissions
         Matcher matcher = percentagePattern.matcher(line);
 
         if (matcher.matches()) {
-            String requiredBlock = matcher.group(2).toUpperCase();
+            String requiredBlock = matcher.group(2);
             Optional<Map.Entry<List<String>, Integer>> entry = requiredEntities.entrySet().stream().filter(e -> e.getKey().contains(requiredBlock)).findAny();
             if (entry.isPresent()) {
                 line = line.replace("{percentage_" + matcher.group(2) + "}",
@@ -216,7 +216,7 @@ public final class MythicMobKillsMissions extends Mission<MythicMobKillsMissions
         }
 
         if ((matcher = valuePattern.matcher(line)).matches()) {
-            String requiredBlock = matcher.group(2).toUpperCase();
+            String requiredBlock = matcher.group(2);
             Optional<Map.Entry<List<String>, Integer>> entry = requiredEntities.entrySet().stream().filter(e -> e.getKey().contains(requiredBlock)).findFirst();
             if (entry.isPresent()) {
                 line = line.replace("{value_" + matcher.group(2) + "}",
