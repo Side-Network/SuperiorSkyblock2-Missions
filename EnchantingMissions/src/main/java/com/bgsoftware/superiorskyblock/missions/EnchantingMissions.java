@@ -280,10 +280,9 @@ public final class EnchantingMissions extends Mission<EnchantingMissions.Enchant
 
                     for (Enchantment enchantment : requiredEnchantment.enchantments.keySet()) {
                         if (itemStack.getType() == Material.ENCHANTED_BOOK) {
-                            if (((EnchantmentStorageMeta) itemStack.getItemMeta()).getStoredEnchantLevel(enchantment) <
-                                    requiredEnchantment.enchantments.get(enchantment))
+                            if (((EnchantmentStorageMeta) itemStack.getItemMeta()).getStoredEnchantLevel(enchantment) != requiredEnchantment.enchantments.get(enchantment))
                                 continue outerLoop;
-                        } else if (itemStack.getEnchantmentLevel(enchantment) < requiredEnchantment.enchantments.get(enchantment)) {
+                        } else if (itemStack.getEnchantmentLevel(enchantment) != requiredEnchantment.enchantments.get(enchantment)) {
                             continue outerLoop;
                         }
                     }
