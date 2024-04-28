@@ -70,9 +70,9 @@ public final class MythicMobKillsMissions extends Mission<MythicMobKillsMissions
         int requiredEntities = 0;
         int kills = 0;
 
-        for (Map.Entry<List<String>, Integer> requiredEntity : this.requiredEntities.entrySet()) {
-            requiredEntities += requiredEntity.getValue();
-            kills += Math.min(killsTracker.getKills(requiredEntity.getKey()), requiredEntity.getValue());
+        for (Map.Entry<List<String>, Integer> entry : this.requiredEntities.entrySet()) {
+            requiredEntities += entry.getValue();
+            kills += Math.min(killsTracker.getKills(entry.getKey()), entry.getValue());
         }
 
         return (double) kills / requiredEntities;
@@ -87,8 +87,8 @@ public final class MythicMobKillsMissions extends Mission<MythicMobKillsMissions
 
         int kills = 0;
 
-        for (Map.Entry<List<String>, Integer> requiredEntity : this.requiredEntities.entrySet())
-            kills += Math.min(killsTracker.getKills(requiredEntity.getKey()), requiredEntity.getValue());
+        for (Map.Entry<List<String>, Integer> entry : this.requiredEntities.entrySet())
+            kills += Math.min(killsTracker.getKills(entry.getKey()), entry.getValue());
 
         return kills;
     }
@@ -107,7 +107,12 @@ public final class MythicMobKillsMissions extends Mission<MythicMobKillsMissions
         if (killsTracker == null)
             return 0;
 
-        return killsTracker.getKills(mob.getInternalName());
+        for (Map.Entry<List<String>, Integer> entry : this.requiredEntities.entrySet()) {
+            if (entry.getKey().contains(mob.getInternalName()))
+                return killsTracker.getKills(entry.getKey());
+        }
+
+        return 0;
     }
 
     @Override
@@ -207,20 +212,20 @@ public final class MythicMobKillsMissions extends Mission<MythicMobKillsMissions
         Matcher matcher = percentagePattern.matcher(line);
 
         if (matcher.matches()) {
-            String requiredBlock = matcher.group(2);
-            Optional<Map.Entry<List<String>, Integer>> entry = requiredEntities.entrySet().stream().filter(e -> e.getKey().contains(requiredBlock)).findAny();
+            String requiredEntity = matcher.group(2);
+            Optional<Map.Entry<List<String>, Integer>> entry = requiredEntities.entrySet().stream().filter(e -> e.getKey().contains(requiredEntity)).findAny();
             if (entry.isPresent()) {
                 line = line.replace("{percentage_" + matcher.group(2) + "}",
-                        "" + (killsTracker.getKills(Collections.singletonList(requiredBlock)) * 100) / entry.get().getValue());
+                        "" + (killsTracker.getKills(entry.get().getKey()) * 100) / entry.get().getValue());
             }
         }
 
         if ((matcher = valuePattern.matcher(line)).matches()) {
-            String requiredBlock = matcher.group(2);
-            Optional<Map.Entry<List<String>, Integer>> entry = requiredEntities.entrySet().stream().filter(e -> e.getKey().contains(requiredBlock)).findFirst();
+            String requiredEntity = matcher.group(2);
+            Optional<Map.Entry<List<String>, Integer>> entry = requiredEntities.entrySet().stream().filter(e -> e.getKey().contains(requiredEntity)).findFirst();
             if (entry.isPresent()) {
                 line = line.replace("{value_" + matcher.group(2) + "}",
-                        "" + killsTracker.getKills(Collections.singletonList(requiredBlock)));
+                        "" + killsTracker.getKills(entry.get().getKey()));
             }
         }
 
@@ -234,18 +239,6 @@ public final class MythicMobKillsMissions extends Mission<MythicMobKillsMissions
         void track(String entity, int amount) {
             int newAmount = amount + killsTracker.getOrDefault(entity, 0);
             killsTracker.put(entity, newAmount);
-        }
-
-        int getKills(String type) {
-            int amount = 0;
-            boolean all = type.equalsIgnoreCase("ALL");
-
-            for (String entity : killsTracker.keySet()) {
-                if (all || entity.equalsIgnoreCase(type))
-                    amount += killsTracker.get(entity);
-            }
-
-            return amount;
         }
 
         int getKills(List<String> entities) {
