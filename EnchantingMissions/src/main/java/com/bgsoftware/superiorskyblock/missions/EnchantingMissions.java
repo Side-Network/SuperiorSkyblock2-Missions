@@ -34,8 +34,8 @@ public final class EnchantingMissions extends Mission<EnchantingMissions.Enchant
 
     private static final SuperiorSkyblock superiorSkyblock = SuperiorSkyblockAPI.getSuperiorSkyblock();
 
-    private static final Pattern valuePattern = Pattern.compile("(.*)\\{enchanted_(.+?)}(.*)"),
-            doubleValuePattern = Pattern.compile("(.*)\\{enchanted_(.+?)}(.*)\\{enchanted_(.+?)}(.*)")
+    private static final Pattern valuePattern = Pattern.compile("(.*)\\{value_(.+?)}(.*)"),
+            doubleValuePattern = Pattern.compile("(.*)\\{value_(.+?)}(.*)\\{value_(.+?)}(.*)")
     ;
 
     private final Map<String, RequiredEnchantment> requiredEnchantments = new HashMap<>();
@@ -241,10 +241,10 @@ public final class EnchantingMissions extends Mission<EnchantingMissions.Enchant
                 String key = matcher.group(2 * i).toUpperCase();
 
                 Optional<Map.Entry<String, RequiredEnchantment>> entry = requiredEnchantments.entrySet().stream()
-                        .filter(e -> e.getKey().equalsIgnoreCase(key)).findAny();
+                        .filter(e -> e.getKey().equalsIgnoreCase(key) || e.getValue().items.contains(key)).findAny();
 
                 if (entry.isPresent()) {
-                    line = line.replace("{enchanted_" + matcher.group(2 * i) + "}",
+                    line = line.replace("{value_" + matcher.group(2 * i) + "}",
                             String.valueOf(Math.min(enchantsTracker.getEnchanted(entry.get().getValue()), entry.get().getValue().amount)));
                 }
             }
@@ -255,10 +255,10 @@ public final class EnchantingMissions extends Mission<EnchantingMissions.Enchant
                 String key = matcher.group(2).toUpperCase();
 
                 Optional<Map.Entry<String, RequiredEnchantment>> entry = requiredEnchantments.entrySet().stream()
-                        .filter(e -> e.getKey().equalsIgnoreCase(key)).findAny();
+                        .filter(e -> e.getKey().equalsIgnoreCase(key) || e.getValue().items.contains(key)).findAny();
 
                 if (entry.isPresent()) {
-                    line = line.replace("{enchanted_" + matcher.group(2) + "}",
+                    line = line.replace("{value_" + matcher.group(2) + "}",
                             String.valueOf(Math.min(enchantsTracker.getEnchanted(entry.get().getValue()), entry.get().getValue().amount)));
                 }
             }

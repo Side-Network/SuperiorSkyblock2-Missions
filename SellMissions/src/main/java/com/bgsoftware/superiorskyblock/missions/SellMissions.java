@@ -297,12 +297,40 @@ public final class SellMissions extends Mission<SellMissions.SellTracker> implem
             for (CropType cropType : CropManager.get().getCropTypes().values()) {
                 for (Map.Entry<Integer, ItemStack> entry : cropType.getProduce().entrySet()) {
                     if (entry.getValue().getItemMeta().getDisplayName().equalsIgnoreCase(resultItem.getItemMeta().getDisplayName())) {
-                        trackItem(superiorPlayer, cropType.getId() + "-" + entry.getKey(), resultItem.getAmount());
+                        String itemName = cropType.getId() + "-" + entry.getKey();
+
+                        boolean contains = false;
+                        outer:
+                        for (List<String> stacks : customItemsToSell.keySet()) {
+                            for (String stack : stacks) {
+                                if (stack.equalsIgnoreCase(itemName)) {
+                                    contains = true;
+                                    break outer;
+                                }
+                            }
+                        }
+                        if (!contains)
+                            return;
+
+                        trackItem(superiorPlayer, itemName, resultItem.getAmount());
                         return;
                     }
                 }
             }
             return;
+        } else {
+            boolean contains = false;
+            outer:
+            for (List<ItemStack> stacks : itemsToSell.keySet()) {
+                for (ItemStack stack : stacks) {
+                    if (stack.getType() == resultItem.getType()) {
+                        contains = true;
+                        break outer;
+                    }
+                }
+            }
+            if (!contains)
+                return;
         }
 
         trackItem(superiorPlayer, resultItem);
