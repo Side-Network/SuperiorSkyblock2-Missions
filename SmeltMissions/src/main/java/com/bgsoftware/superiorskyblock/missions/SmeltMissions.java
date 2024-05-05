@@ -225,8 +225,15 @@ public final class SmeltMissions extends Mission<SmeltMissions.SmeltingTracker> 
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onInventoryClick(InventoryClickEvent e) {
-        if (e.getClickedInventory() == null || (e.getClickedInventory().getType() != InventoryType.FURNACE))
+        if (e.getClickedInventory() == null)
             return;
+
+        switch (e.getClickedInventory().getType()) {
+            case FURNACE, BLAST_FURNACE, SMOKER:
+                break;
+            default:
+                return;
+        }
 
         int requiredSlot = 2;
 
