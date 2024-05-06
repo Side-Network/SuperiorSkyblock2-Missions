@@ -215,7 +215,12 @@ public final class CraftingMissions extends Mission<CraftingMissions.CraftingsTr
         if (e.getResult() == null || e.getResult().getType() == Material.AIR)
             return;
 
-        ItemStack resultItem = new ItemStack(e.getRecipe().getFirstResult().getType());
+        ItemStack resultItem = new ItemStack(
+                e.getRecipe().getResults().stream()
+                        .filter(i -> i.getType() == e.getResult().getType())
+                        .findFirst()
+                        .orElse(e.getRecipe().getFirstResult())
+        );
 
         SuperiorPlayer superiorPlayer = SuperiorSkyblockAPI.getPlayer(e.getPlayer().getUniqueId());
 
