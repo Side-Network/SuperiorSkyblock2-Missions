@@ -52,7 +52,7 @@ public final class EnchantingMissions extends Mission<EnchantingMissions.Enchant
 
         for (String key : section.getConfigurationSection("required-enchants").getKeys(false)) {
             List<String> itemTypes = section.getStringList("required-enchants." + key + ".types");
-            Map<Enchantment, Integer> enchantments = new HashMap<>();
+            Map<Enchantment, List<Integer>> enchantments = new HashMap<>();
 
             if (section.isConfigurationSection("required-enchants." + key + ".enchants")) {
                 for (String enchantment : section.getConfigurationSection("required-enchants." + key + ".enchants").getKeys(false)) {
@@ -61,7 +61,18 @@ public final class EnchantingMissions extends Mission<EnchantingMissions.Enchant
                     if (_enchantment == null)
                         throw new MissionLoadException("Enchantment " + enchantment + " is not valid.");
 
-                    enchantments.put(_enchantment, section.getInt("required-enchants." + key + ".enchants." + enchantment));
+                    if (!enchantments.containsKey(_enchantment)) {
+                        enchantments.put(_enchantment, new ArrayList<>());
+                    }
+
+                    if (section.isList("required-enchants." + key + ".enchants." + enchantment)) {
+                        for (String enchLevel : section.getStringList("required-enchants." + key + ".enchants." + enchantment)) {
+                            enchantments.get(_enchantment).add(Integer.parseInt(enchLevel));
+                        }
+                    } else {
+                        enchantments.get(_enchantment).add(section.getInt("required-enchants." + key + ".enchants." + enchantment));
+                    }
+
                 }
             }
 
@@ -222,7 +233,7 @@ public final class EnchantingMissions extends Mission<EnchantingMissions.Enchant
 
         EnchantsTracker enchantsTracker = getOrCreate(superiorPlayer, s -> new EnchantsTracker());
 
-        if(enchantsTracker == null)
+        if (enchantsTracker == null)
             return;
 
         enchantsTracker.track(superiorPlayer, itemStack, enchantLevel);
@@ -272,20 +283,27 @@ public final class EnchantingMissions extends Mission<EnchantingMissions.Enchant
         private final Map<RequiredEnchantment, Integer> enchantsTracker = new HashMap<>();
 
         void track(SuperiorPlayer superiorPlayer, ItemStack itemStack, int enchantLevel) {
-            outerLoop:
             for (RequiredEnchantment requiredEnchantment : requiredEnchantments.values()) {
                 if (requiredEnchantment.items.contains(itemStack.getType().name()) || requiredEnchantment.items.contains("ALL") || requiredEnchantment.items.contains("all")) {
                     if (enchantLevel < requiredEnchantment.minLevel)
                         continue;
 
+                    boolean found = false;
                     for (Enchantment enchantment : requiredEnchantment.enchantments.keySet()) {
+                        int storedLevel;
                         if (itemStack.getType() == Material.ENCHANTED_BOOK) {
-                            if (((EnchantmentStorageMeta) itemStack.getItemMeta()).getStoredEnchantLevel(enchantment) != requiredEnchantment.enchantments.get(enchantment))
-                                continue outerLoop;
-                        } else if (itemStack.getEnchantmentLevel(enchantment) != requiredEnchantment.enchantments.get(enchantment)) {
-                            continue outerLoop;
+                            storedLevel = ((EnchantmentStorageMeta) itemStack.getItemMeta()).getStoredEnchantLevel(enchantment);
+                        } else {
+                            storedLevel = itemStack.getEnchantmentLevel(enchantment);
+                        }
+
+                        if (requiredEnchantment.enchantments.get(enchantment).contains(storedLevel)) {
+                            found = true;
+                            break;
                         }
                     }
+                    if (!found)
+                        continue;
 
                     boolean bossBar = getEnchanted(requiredEnchantment) < requiredEnchantment.amount;
                     enchantsTracker.put(requiredEnchantment, getEnchanted(requiredEnchantment) + 1);
@@ -305,11 +323,11 @@ public final class EnchantingMissions extends Mission<EnchantingMissions.Enchant
 
         private final String key;
         private final List<String> items;
-        private final Map<Enchantment, Integer> enchantments;
+        private final Map<Enchantment, List<Integer>> enchantments;
         private final Integer amount;
         private final Integer minLevel;
 
-        RequiredEnchantment(String key, List<String> items, Map<Enchantment, Integer> enchantments, Integer amount, Integer minLevel) {
+        RequiredEnchantment(String key, List<String> items, Map<Enchantment, List<Integer>> enchantments, Integer amount, Integer minLevel) {
             this.key = key;
             this.items = items;
             this.enchantments = enchantments;
