@@ -288,22 +288,24 @@ public final class EnchantingMissions extends Mission<EnchantingMissions.Enchant
                     if (enchantLevel < requiredEnchantment.minLevel)
                         continue;
 
-                    boolean found = false;
-                    for (Enchantment enchantment : requiredEnchantment.enchantments.keySet()) {
-                        int storedLevel;
-                        if (itemStack.getType() == Material.ENCHANTED_BOOK) {
-                            storedLevel = ((EnchantmentStorageMeta) itemStack.getItemMeta()).getStoredEnchantLevel(enchantment);
-                        } else {
-                            storedLevel = itemStack.getEnchantmentLevel(enchantment);
-                        }
+                    if (!requiredEnchantment.enchantments.isEmpty()) {
+                        boolean found = false;
+                        for (Enchantment enchantment : requiredEnchantment.enchantments.keySet()) {
+                            int storedLevel;
+                            if (itemStack.getType() == Material.ENCHANTED_BOOK) {
+                                storedLevel = ((EnchantmentStorageMeta) itemStack.getItemMeta()).getStoredEnchantLevel(enchantment);
+                            } else {
+                                storedLevel = itemStack.getEnchantmentLevel(enchantment);
+                            }
 
-                        if (requiredEnchantment.enchantments.get(enchantment).contains(storedLevel)) {
-                            found = true;
-                            break;
+                            if (requiredEnchantment.enchantments.get(enchantment).contains(storedLevel)) {
+                                found = true;
+                                break;
+                            }
                         }
+                        if (!found)
+                            continue;
                     }
-                    if (!found)
-                        continue;
 
                     boolean bossBar = getEnchanted(requiredEnchantment) < requiredEnchantment.amount;
                     enchantsTracker.put(requiredEnchantment, getEnchanted(requiredEnchantment) + 1);
