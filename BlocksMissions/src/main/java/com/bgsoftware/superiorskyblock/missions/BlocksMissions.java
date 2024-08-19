@@ -11,6 +11,7 @@ import dev.aurelium.auraskills.api.region.Regions;
 import dev.aurelium.auraskills.api.source.type.BlockXpSource;
 import dev.aurelium.auraskills.bukkit.AuraSkills;
 import dev.aurelium.auraskills.bukkit.source.BlockLeveler;
+import lv.side.enchants.Events.CeBlockBreakEvent;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
@@ -277,6 +278,27 @@ public final class BlocksMissions extends Mission<BlocksMissions.BlocksCounter> 
             return;
 
         handleBlockTrack(e.getPlayer(), e.getBlock(), getBlockAmount(e.getPlayer(), e.getBlock()));
+    }
+    @EventHandler
+    public void onCEBlockBreak(CeBlockBreakEvent e) {
+        SuperiorPlayer superiorPlayer = SuperiorSkyblockAPI.getPlayer(e.getPlayer());
+
+        BlocksCounter blocksCounter = getOrCreate(superiorPlayer, s -> new BlocksCounter());
+
+        if (blocksCounter == null)
+            return;
+
+        BlockInfo blockInfo = new BlockInfo(e.getBlock());
+
+        if (blocksPlacement) {
+            if (!replaceBlocks && isMissionBlock(blockInfo)) {
+                blocksCounter.countBlock(blockInfo.getBlockKey(), getBlockAmount(e.getPlayer(), e.getBlock()) * -1);
+                blocksCounter.countBlock("ALL", getBlockAmount(e.getPlayer(), e.getBlock()) * -1);
+            }
+            return;
+        }
+
+        handleBlockBreak(e.getBlock(), superiorPlayer, blockInfo);
     }
 
     private class WildStackerListener implements Listener {
