@@ -342,7 +342,7 @@ public final class SellMissions extends Mission<SellMissions.SellTracker> implem
         if (!superiorSkyblock.getMissions().canCompleteNoProgress(superiorPlayer, this))
             return;
 
-        trackItem(superiorPlayer, event.getProduce(), 1);
+        trackItem(superiorPlayer, event.getProduce(), event.getAmount());
     }
 
     private void trackItem(SuperiorPlayer superiorPlayer, ItemStack itemStack) {
