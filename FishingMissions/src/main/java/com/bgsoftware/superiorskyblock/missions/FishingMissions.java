@@ -5,6 +5,7 @@ import com.bgsoftware.superiorskyblock.api.SuperiorSkyblockAPI;
 import com.bgsoftware.superiorskyblock.api.missions.Mission;
 import com.bgsoftware.superiorskyblock.api.missions.MissionLoadException;
 import com.bgsoftware.superiorskyblock.api.wrappers.SuperiorPlayer;
+import net.momirealms.customfishing.api.event.FishingResultEvent;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Material;
@@ -37,7 +38,9 @@ public final class FishingMissions extends Mission<FishingMissions.FishingTracke
             valuePattern = Pattern.compile("(.*)\\{value_(.+?)}(.*)");
 
     private final Map<List<Material>, Integer> itemsToCatch = new HashMap<>();
+    private final Map<List<String>, Integer> customItemsToCatch = new HashMap<>();
     private final Map<Material, String> itemsBossBar = new HashMap<>();
+    private final Map<String, String> customItemsBossBar = new HashMap<>();
 
     private JavaPlugin plugin;
 
@@ -53,11 +56,12 @@ public final class FishingMissions extends Mission<FishingMissions.FishingTracke
             int amount = section.getInt("required-caughts." + key + ".amount", 1);
 
             List<Material> itemsToCatch = new ArrayList<>();
+            List<String> customItemsToCatch = new ArrayList<>();
 
-            for(String itemType : itemTypes) {
+            for (String itemType : itemTypes) {
                 byte data = 0;
 
-                if(itemType.contains(":")) {
+                if (itemType.contains(":")) {
                     String[] sections = itemType.split(":");
                     itemType = sections[0];
                     try {
@@ -67,21 +71,27 @@ public final class FishingMissions extends Mission<FishingMissions.FishingTracke
                     }
                 }
 
-                Material material;
-
-                try {
-                    material = Material.valueOf(itemType);
-                } catch (IllegalArgumentException ex) {
-                    throw new MissionLoadException("Invalid fishing item " + itemType + ".");
+                Material material = Material.getMaterial(itemType);
+                if (material == null) {
+                    // Custom fish
+                    customItemsToCatch.add(itemType.toUpperCase());
+                    continue;
                 }
 
                 itemsToCatch.add(material);
             }
 
-            this.itemsToCatch.put(itemsToCatch, amount);
             String bossBar = section.getString("required-caughts." + key + ".boss-bar", "?");
-            for (Material toCatch : itemsToCatch) {
-                itemsBossBar.put(toCatch, bossBar);
+            if (!itemsToCatch.isEmpty()) {
+                this.itemsToCatch.put(itemsToCatch, amount);
+                for (Material toCatch : itemsToCatch) {
+                    itemsBossBar.put(toCatch, bossBar);
+                }
+            } else {
+                this.customItemsToCatch.put(customItemsToCatch, amount);
+                for (String toCatch : customItemsToCatch) {
+                    customItemsBossBar.put(toCatch, bossBar);
+                }
             }
         }
 
@@ -105,6 +115,11 @@ public final class FishingMissions extends Mission<FishingMissions.FishingTracke
             interactions += Math.min(fishingTracker.getCaughts(entry.getKey()), entry.getValue());
         }
 
+        for (Map.Entry<List<String>, Integer> entry : this.customItemsToCatch.entrySet()) {
+            requiredItems += entry.getValue();
+            interactions += Math.min(fishingTracker.getCustomCaughts(entry.getKey()), entry.getValue());
+        }
+
         return (double) interactions / requiredItems;
     }
 
@@ -119,6 +134,9 @@ public final class FishingMissions extends Mission<FishingMissions.FishingTracke
 
         for (Map.Entry<List<Material>, Integer> entry : this.itemsToCatch.entrySet())
             interactions += Math.min(fishingTracker.getCaughts(entry.getKey()), entry.getValue());
+
+        for (Map.Entry<List<String>, Integer> entry : this.customItemsToCatch.entrySet())
+            interactions += Math.min(fishingTracker.getCustomCaughts(entry.getKey()), entry.getValue());
 
         return interactions;
     }
@@ -136,6 +154,16 @@ public final class FishingMissions extends Mission<FishingMissions.FishingTracke
         return req;
     }
 
+    public int getRequired(String item) {
+        int req = 0;
+        for (Map.Entry<List<String>, Integer> entry : customItemsToCatch.entrySet()) {
+            if (entry.getKey().contains(item))
+                req += entry.getValue();
+        }
+
+        return req;
+    }
+
     public int getProgress(SuperiorPlayer superiorPlayer, ItemStack itemStack) {
         FishingTracker fishingTracker = get(superiorPlayer);
         if (fishingTracker == null)
@@ -144,6 +172,19 @@ public final class FishingMissions extends Mission<FishingMissions.FishingTracke
         for (Map.Entry<List<Material>, Integer> entry : itemsToCatch.entrySet()) {
             if (entry.getKey().contains(itemStack.getType()))
                 return fishingTracker.getCaughts(entry.getKey());
+        }
+
+        return 0;
+    }
+
+    public int getProgress(SuperiorPlayer superiorPlayer, String item) {
+        FishingTracker fishingTracker = get(superiorPlayer);
+        if (fishingTracker == null)
+            return 0;
+
+        for (Map.Entry<List<String>, Integer> entry : customItemsToCatch.entrySet()) {
+            if (entry.getKey().contains(item))
+                return fishingTracker.getCustomCaughts(entry.getKey());
         }
 
         return 0;
@@ -169,6 +210,11 @@ public final class FishingMissions extends Mission<FishingMissions.FishingTracke
                 section.set(uuid + "." + index + ".amount", craftedEntry.getValue());
                 index++;
             }
+            for (Map.Entry<String, Integer> craftedEntry : entry.getValue().caughtCustomItems.entrySet()) {
+                section.set(uuid + "." + index + ".item", craftedEntry.getKey());
+                section.set(uuid + "." + index + ".amount", craftedEntry.getValue());
+                index++;
+            }
         }
     }
 
@@ -185,19 +231,19 @@ public final class FishingMissions extends Mission<FishingMissions.FishingTracke
             insertData(superiorPlayer, fishingTracker);
 
             for (String key : section.getConfigurationSection(uuid).getKeys(false)) {
-                Material material;
-                try {
-                    String mat = section.getString(uuid + "." + key + ".item");
-                    material = Material.valueOf(mat);
-                } catch (IllegalArgumentException ex) {
-                    ItemStack oldItem = section.getItemStack(uuid + "." + key + ".item");
-                    if (oldItem == null)
-                        continue;
-
-                    material = oldItem.getType();
-                }
                 int amount = section.getInt(uuid + "." + key + ".amount");
-                fishingTracker.caughtItems.put(material, amount);
+                String mat = section.getString(uuid + "." + key + ".item");
+                if (mat == null)
+                    continue;
+
+                Material material = Material.getMaterial(mat);
+
+                if (material == null) {
+                    // Custom fish
+                    fishingTracker.caughtCustomItems.put(mat, amount);
+                } else {
+                    fishingTracker.caughtItems.put(material, amount);
+                }
             }
         }
     }
@@ -244,15 +290,46 @@ public final class FishingMissions extends Mission<FishingMissions.FishingTracke
         trackItem(superiorPlayer, caughtItem.getItemStack());
     }
 
-    private void trackItem(SuperiorPlayer superiorPlayer, ItemStack itemStack) {
-        FishingTracker blocksTracker = getOrCreate(superiorPlayer, s -> new FishingTracker());
-
-        if(blocksTracker == null)
+    @EventHandler
+    public void onCustomFishCaught(FishingResultEvent event) {
+        if (event.getResult() == FishingResultEvent.Result.FAILURE)
             return;
 
-        blocksTracker.trackItem(itemStack);
+        String caught = event.getLoot().id().toUpperCase();
+        SuperiorPlayer superiorPlayer = SuperiorSkyblockAPI.getPlayer(event.getPlayer());
+
+        if (!isMissionItem(caught))
+            return;
+
+        if (!superiorSkyblock.getMissions().canCompleteNoProgress(superiorPlayer, this))
+            return;
+
+        trackItem(superiorPlayer, caught);
+    }
+
+    private void trackItem(SuperiorPlayer superiorPlayer, ItemStack itemStack) {
+        FishingTracker fishingTracker = getOrCreate(superiorPlayer, s -> new FishingTracker());
+        if (fishingTracker == null)
+            return;
+
+        fishingTracker.trackItem(itemStack);
         if (itemsBossBar.containsKey(itemStack.getType()))
             sendBossBar(superiorPlayer, itemsBossBar.get(itemStack.getType()), getProgress(superiorPlayer, itemStack), getRequired(itemStack), getProgress(superiorPlayer));
+
+        Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, () -> superiorPlayer.runIfOnline(player -> {
+            if (canComplete(superiorPlayer))
+                SuperiorSkyblockAPI.getSuperiorSkyblock().getMissions().rewardMission(this, superiorPlayer, true);
+        }), 2L);
+    }
+
+    private void trackItem(SuperiorPlayer superiorPlayer, String item) {
+        FishingTracker fishingTracker = getOrCreate(superiorPlayer, s -> new FishingTracker());
+        if (fishingTracker == null)
+            return;
+
+        fishingTracker.trackItem(item);
+        if (customItemsBossBar.containsKey(item))
+            sendBossBar(superiorPlayer, customItemsBossBar.get(item), getProgress(superiorPlayer, item), getRequired(item), getProgress(superiorPlayer));
 
         Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, () -> superiorPlayer.runIfOnline(player -> {
             if (canComplete(superiorPlayer))
@@ -272,20 +349,39 @@ public final class FishingMissions extends Mission<FishingMissions.FishingTracke
         return false;
     }
 
+    private boolean isMissionItem(String item) {
+        for (List<String> requiredItem : this.customItemsToCatch.keySet()) {
+            if (requiredItem.contains(item))
+                return true;
+        }
+
+        return false;
+    }
+
     private String parsePlaceholders(FishingTracker entityTracker, String line) {
         Matcher matcher = percentagePattern.matcher(line);
 
         if (matcher.matches()) {
             try {
-                String requiredBlock = matcher.group(2).toUpperCase();
-                Material mat = Material.valueOf(requiredBlock);
+                String requiredItem = matcher.group(2).toUpperCase();
+                Material mat = Material.getMaterial(requiredItem);
 
-                Optional<Map.Entry<List<Material>, Integer>> entry = itemsToCatch.entrySet().stream()
-                        .filter(e -> e.getKey().contains(mat)).findAny();
+                if (mat != null) {
+                    Optional<Map.Entry<List<Material>, Integer>> entry = itemsToCatch.entrySet().stream()
+                            .filter(e -> e.getKey().contains(mat)).findAny();
 
-                if (entry.isPresent()) {
-                    line = line.replace("{percentage_" + matcher.group(2) + "}",
-                            "" + (entityTracker.getCaughts(Collections.singletonList(mat)) * 100) / entry.get().getValue());
+                    if (entry.isPresent()) {
+                        line = line.replace("{percentage_" + matcher.group(2) + "}",
+                                "" + (entityTracker.getCaughts(Collections.singletonList(mat)) * 100) / entry.get().getValue());
+                    }
+                } else {
+                    Optional<Map.Entry<List<String>, Integer>> entry = customItemsToCatch.entrySet().stream()
+                            .filter(e -> e.getKey().contains(requiredItem)).findAny();
+
+                    if (entry.isPresent()) {
+                        line = line.replace("{percentage_" + matcher.group(2) + "}",
+                                "" + (entityTracker.getCustomCaughts(Collections.singletonList(requiredItem)) * 100) / entry.get().getValue());
+                    }
                 }
             } catch (Exception ignored) {
             }
@@ -293,15 +389,25 @@ public final class FishingMissions extends Mission<FishingMissions.FishingTracke
 
         if ((matcher = valuePattern.matcher(line)).matches()) {
             try {
-                String requiredBlock = matcher.group(2).toUpperCase();
-                Material mat = Material.valueOf(requiredBlock);
+                String requiredItem = matcher.group(2).toUpperCase();
+                Material mat = Material.getMaterial(requiredItem);
 
-                Optional<Map.Entry<List<Material>, Integer>> entry = itemsToCatch.entrySet().stream()
-                        .filter(e -> e.getKey().contains(mat)).findAny();
+                if (mat != null) {
+                    Optional<Map.Entry<List<Material>, Integer>> entry = itemsToCatch.entrySet().stream()
+                            .filter(e -> e.getKey().contains(mat)).findAny();
 
-                if (entry.isPresent()) {
-                    line = line.replace("{value_" + matcher.group(2) + "}",
-                            "" + (entityTracker.getCaughts(Collections.singletonList(mat))));
+                    if (entry.isPresent()) {
+                        line = line.replace("{value_" + matcher.group(2) + "}",
+                                "" + (entityTracker.getCaughts(Collections.singletonList(mat))));
+                    }
+                } else {
+                    Optional<Map.Entry<List<String>, Integer>> entry = customItemsToCatch.entrySet().stream()
+                            .filter(e -> e.getKey().contains(requiredItem)).findAny();
+
+                    if (entry.isPresent()) {
+                        line = line.replace("{value_" + matcher.group(2) + "}",
+                                "" + (entityTracker.getCustomCaughts(Collections.singletonList(requiredItem))));
+                    }
                 }
             } catch (Exception ignored) {
             }
@@ -313,13 +419,22 @@ public final class FishingMissions extends Mission<FishingMissions.FishingTracke
     public static class FishingTracker {
 
         private final Map<Material, Integer> caughtItems = new HashMap<>();
+        private final Map<String, Integer> caughtCustomItems = new HashMap<>();
 
         void trackItem(ItemStack itemStack) {
             caughtItems.put(itemStack.getType(), caughtItems.getOrDefault(itemStack.getType(), 0) + itemStack.getAmount());
         }
 
+        void trackItem(String item) {
+            caughtCustomItems.put(item, caughtCustomItems.getOrDefault(item, 0) + 1);
+        }
+
         int getCaughts(Material material) {
             return caughtItems.getOrDefault(material, 0);
+        }
+
+        int getCaughts(String item) {
+            return caughtCustomItems.getOrDefault(item, 0);
         }
 
         int getCaughts(List<Material> itemStacks) {
@@ -332,6 +447,15 @@ public final class FishingMissions extends Mission<FishingMissions.FishingTracke
             return caughts;
         }
 
+        int getCustomCaughts(List<String> items) {
+            int caughts = 0;
+
+            for (String item : items) {
+                caughts += caughtCustomItems.getOrDefault(item, 0);
+            }
+
+            return caughts;
+        }
     }
 
 }

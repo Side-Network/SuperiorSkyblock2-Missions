@@ -1,5 +1,10 @@
 group 'FishingMissions'
 
+repositories {
+    maven { url 'https://jitpack.io' }
+}
+
 dependencies {
     compileOnly 'org.spigotmc:v1_14_R1:latest'
+    compileOnly 'com.github.Xiao-MoMi:Custom-Fishing:2.2.34'
 }
