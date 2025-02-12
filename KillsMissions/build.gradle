@@ -1,5 +1,9 @@
 group 'KillsMissions'
 
+repositories {
+    maven { url 'https://repo.papermc.io/repository/maven-public/' }
+}
+
 dependencies {
     compileOnly 'com.bgsoftware:WildStackerAPI:3.6.3'
 }

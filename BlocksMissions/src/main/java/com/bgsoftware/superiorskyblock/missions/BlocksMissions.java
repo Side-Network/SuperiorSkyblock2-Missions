@@ -6,26 +6,19 @@ import com.bgsoftware.superiorskyblock.api.missions.Mission;
 import com.bgsoftware.superiorskyblock.api.missions.MissionLoadException;
 import com.bgsoftware.superiorskyblock.api.wrappers.SuperiorPlayer;
 import com.bgsoftware.wildstacker.api.events.BarrelUnstackEvent;
-import dev.aurelium.auraskills.api.AuraSkillsBukkit;
-import dev.aurelium.auraskills.api.region.Regions;
-import dev.aurelium.auraskills.api.source.type.BlockXpSource;
-import dev.aurelium.auraskills.bukkit.AuraSkills;
-import dev.aurelium.auraskills.bukkit.source.BlockLeveler;
 import lv.side.enchants.Events.CeBlockBreakEvent;
+import lv.theironminerlv.sidelogging.utils.BlockTracking;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
-import org.bukkit.block.BlockFace;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
-import org.bukkit.event.block.BlockPistonExtendEvent;
-import org.bukkit.event.block.BlockPistonRetractEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
@@ -48,9 +41,6 @@ import java.util.regex.Pattern;
 public final class BlocksMissions extends Mission<BlocksMissions.BlocksCounter> implements Listener {
 
     private static final SuperiorSkyblock superiorSkyblock = SuperiorSkyblockAPI.getSuperiorSkyblock();
-
-    private static Regions regionTracker;
-    private static BlockLeveler blockLeveler;
 
     private static final Pattern percentagePattern = Pattern.compile("(.*)\\{percentage_(.+?)}(.*)"),
             valuePattern = Pattern.compile("(.*)\\{value_(.+?)}(.*)");
@@ -88,10 +78,6 @@ public final class BlocksMissions extends Mission<BlocksMissions.BlocksCounter> 
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
             if (Bukkit.getPluginManager().isPluginEnabled("WildStacker"))
                 Bukkit.getPluginManager().registerEvents(new WildStackerListener(), plugin);
-            if (Bukkit.getPluginManager().isPluginEnabled("AuraSkills")) {
-                regionTracker = AuraSkillsBukkit.get().getRegions();
-                blockLeveler = ((AuraSkills) Bukkit.getPluginManager().getPlugin("AuraSkills")).getLevelManager().getLeveler(BlockLeveler.class);
-            }
         }, 1L);
 
         setClearMethod(blocksCounter -> blocksCounter.trackedBlockCounts.clear());
@@ -221,7 +207,7 @@ public final class BlocksMissions extends Mission<BlocksMissions.BlocksCounter> 
         itemStack.setItemMeta(itemMeta);
     }
 
-    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onBlockBreak(BlockBreakEvent e) {
         SuperiorPlayer superiorPlayer = SuperiorSkyblockAPI.getPlayer(e.getPlayer());
 
@@ -243,19 +229,7 @@ public final class BlocksMissions extends Mission<BlocksMissions.BlocksCounter> 
         handleBlockBreak(e.getBlock(), superiorPlayer, blockInfo);
     }
 
-    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
-    public void onPistonRetract(BlockPistonRetractEvent e) {
-        if (!e.getBlocks().isEmpty())
-            handleBlockPistonMove(new ArrayList<>(e.getBlocks()), e.getDirection());
-    }
-
-    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
-    public void onPistonExtend(BlockPistonExtendEvent e) {
-        if (!e.getBlocks().isEmpty())
-            handleBlockPistonMove(new ArrayList<>(e.getBlocks()), e.getDirection());
-    }
-
-    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onBlockPlace(BlockPlaceEvent e) {
         if (!onlyNatural && !blocksPlacement)
             return;
@@ -267,12 +241,8 @@ public final class BlocksMissions extends Mission<BlocksMissions.BlocksCounter> 
         if (!isMissionBlock(blockInfo))
             return;
 
-        if (!blocksPlacement) {
-            if (!replaceBlocks && blockLeveler.getSource(e.getBlock(), BlockXpSource.BlockTriggers.BREAK) == null) {
-                regionTracker.addPlacedBlock(e.getBlock());
-            }
+        if (!blocksPlacement)
             return;
-        }
 
         if (isBarrel(e.getBlock()) || !superiorSkyblock.getMissions().canCompleteNoProgress(superiorPlayer, this))
             return;
@@ -336,29 +306,10 @@ public final class BlocksMissions extends Mission<BlocksMissions.BlocksCounter> 
                 !superiorSkyblock.getMissions().canCompleteNoProgress(superiorPlayer, this))
             return;
 
-        if (onlyNatural && regionTracker.isPlacedBlock(block))
+        if (onlyNatural && BlockTracking.contains(block.getLocation()))
             return;
 
         handleBlockTrack(TrackingType.BROKEN_BLOCKS, superiorPlayer, block, blockInfo, getBlockAmount(superiorPlayer.asPlayer(), block));
-    }
-
-    private void handleBlockPistonMove(List<Block> blockList, BlockFace direction) {
-        blockList.removeIf(block -> !isMissionBlock(new BlockInfo(block)) || !regionTracker.isPlacedBlock(block));
-
-        if (blockList.isEmpty())
-            return;
-
-        List<Block> movedBlocks = blockList.stream()
-                .map(block -> block.getRelative(direction))
-                .toList();
-
-        List<Block> addedBlocks = new ArrayList<>(movedBlocks);
-        addedBlocks.removeAll(blockList);
-
-        addedBlocks.forEach(block -> {
-            if (blockLeveler.getSource(block, BlockXpSource.BlockTriggers.BREAK) == null)
-                regionTracker.addPlacedBlock(block);
-        });
     }
 
     private void handleBlockTrack(Player player, Block block, int amount) {
@@ -378,9 +329,6 @@ public final class BlocksMissions extends Mission<BlocksMissions.BlocksCounter> 
         if (blocksCounter == null)
             return;
 
-        if (trackingType == TrackingType.PLACED_BLOCKS && blockLeveler.getSource(block, BlockXpSource.BlockTriggers.BREAK) == null)
-            regionTracker.addPlacedBlock(block);
-
         blocksCounter.countBlock(blockInfo.getBlockKey(), amount);
         blocksCounter.countBlock("ALL", amount);
 
@@ -388,7 +336,6 @@ public final class BlocksMissions extends Mission<BlocksMissions.BlocksCounter> 
             sendBossBar(superiorPlayer, blocksBossBar.get(block.getType().name()), getProgress(superiorPlayer, block.getType().name()), getRequired(block.getType().name()), getProgress(superiorPlayer));
         else if (blocksBossBar.containsKey("ALL") && getRequired("ALL") > -1)
             sendBossBar(superiorPlayer, blocksBossBar.get("ALL"), getProgress(superiorPlayer, "ALL"), getRequired("ALL"), getProgress(superiorPlayer));
-
 
         Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, () -> superiorPlayer.runIfOnline(_player -> {
             if (canComplete(superiorPlayer))

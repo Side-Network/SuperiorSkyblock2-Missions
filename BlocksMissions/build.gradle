@@ -8,6 +8,6 @@ dependencies {
     compileOnly "com.bgsoftware:WildStackerAPI:3.6.3"
     compileOnly "com.bgsoftware:WildToolsAPI:2.11.4"
     compileOnly "com.bgsoftware.common.reflection:ReflectionUtils:latest"
-    compileOnly(files("AuraSkills-2.0.7.jar"))
+    compileOnly(files("SideLogging-1.1.jar"))
     compileOnly(files("SR-Enchants-1.0.jar"))
 }
