@@ -5,7 +5,6 @@ import com.bgsoftware.superiorskyblock.api.SuperiorSkyblockAPI;
 import com.bgsoftware.superiorskyblock.api.missions.Mission;
 import com.bgsoftware.superiorskyblock.api.missions.MissionLoadException;
 import com.bgsoftware.superiorskyblock.api.wrappers.SuperiorPlayer;
-import haveric.recipeManager.api.events.RecipeManagerCraftEvent;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Material;
@@ -208,31 +207,6 @@ public final class CraftingMissions extends Mission<CraftingMissions.CraftingsTr
             }, 1L);
         }
 
-    }
-
-    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
-    public void onCustomCraft(RecipeManagerCraftEvent e) {
-        if (e.getResult() == null || e.getResult().getType() == Material.AIR)
-            return;
-
-        ItemStack resultItem = new ItemStack(
-                e.getRecipe().getResults().stream()
-                        .filter(i -> i.getType() == e.getResult().getType())
-                        .findFirst()
-                        .orElse(e.getRecipe().getFirstResult())
-        );
-
-        SuperiorPlayer superiorPlayer = SuperiorSkyblockAPI.getPlayer(e.getPlayer().getUniqueId());
-
-        if (itemsToCraft.containsKey(resultItem) &&
-                superiorSkyblock.getMissions().canCompleteNoProgress(superiorPlayer, this)) {
-            int amountOfResult = countSimpleItems(e.getPlayer(), resultItem);
-            Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                int afterTickAmountOfResult = countSimpleItems(e.getPlayer(), resultItem);
-                resultItem.setAmount(afterTickAmountOfResult - amountOfResult);
-                trackItem(superiorPlayer, resultItem);
-            }, 1L);
-        }
     }
 
     private void trackItem(SuperiorPlayer superiorPlayer, ItemStack itemStack) {

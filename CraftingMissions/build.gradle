@@ -1,5 +1,4 @@
 group 'CraftingMissions'
 
 dependencies {
-    compileOnly(files("RecipeManager.jar"))
 }
