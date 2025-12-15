@@ -23,4 +23,5 @@ include 'SellMissions'
 include 'BreedMissions'
 include 'MythicMobKillsMissions'
 include 'SmeltMissions'
+include 'CitadelCrystalMissions'
 

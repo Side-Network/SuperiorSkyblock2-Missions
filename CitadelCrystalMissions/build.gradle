@@ -1,0 +1,5 @@
+group 'CitadelCrystalMissions'
+
+dependencies {
+    compileOnly(files("SideCitadel.jar"))
+}
