@@ -1,4 +1,4 @@
-group 'CitadelCrystalMissions'
+group 'ShopkeeperMissions'
 
 dependencies {
     compileOnly(files("SideCitadel.jar"))
