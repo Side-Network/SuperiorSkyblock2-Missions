@@ -173,11 +173,9 @@ public final class ShopkeeperMissions extends Mission<ShopkeeperMissions.TradeTr
 
     @EventHandler
     public void onShopkeeperTrade(ShopkeeperTradeCompletedEvent event) {
-        Bukkit.broadcastMessage("a1");
         SuperiorPlayer superiorPlayer = SuperiorSkyblockAPI.getPlayer(event.getCompletedTrade().getPlayer());
         if (!superiorSkyblock.getMissions().canCompleteNoProgress(superiorPlayer, this))
             return;
-        Bukkit.broadcastMessage("a2 " + event.getCompletedTrade().getTradingRecipe().getResultItem().getType() + " " + event.getCompletedTrade().getTradingRecipe().getResultItem().getAmount());
 
         trackItem(superiorPlayer, new ItemStack(event.getCompletedTrade().getTradingRecipe().getResultItem().getType(), event.getCompletedTrade().getTradingRecipe().getResultItem().getAmount()));
     }
