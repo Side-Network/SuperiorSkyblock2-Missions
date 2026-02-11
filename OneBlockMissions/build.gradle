@@ -1,0 +1,5 @@
+group 'BlocksMissions'
+
+dependencies {
+    compileOnly(files("SSBOneBlock-2025.2-b94.jar"))
+}

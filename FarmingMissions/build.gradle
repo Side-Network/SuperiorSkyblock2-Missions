@@ -1,5 +1,1 @@
 group 'FarmingMissions'
-
-dependencies {
-    compileOnly(files("SideCrops.jar"))
-}

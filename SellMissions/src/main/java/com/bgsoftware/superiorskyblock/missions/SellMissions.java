@@ -5,9 +5,6 @@ import com.bgsoftware.superiorskyblock.api.SuperiorSkyblockAPI;
 import com.bgsoftware.superiorskyblock.api.missions.Mission;
 import com.bgsoftware.superiorskyblock.api.missions.MissionLoadException;
 import com.bgsoftware.superiorskyblock.api.wrappers.SuperiorPlayer;
-import lv.side.sidecrops.events.CropHarvesterEvent;
-import lv.side.sidecrops.managers.CropManager;
-import lv.side.sidecrops.objects.CropType;
 import net.brcdev.shopgui.event.ShopPostTransactionEvent;
 import net.brcdev.shopgui.shop.ShopManager;
 import net.brcdev.shopgui.shop.ShopTransactionResult;
@@ -95,7 +92,10 @@ public final class SellMissions extends Mission<SellMissions.SellTracker> implem
 
         Bukkit.getPluginManager().registerEvents(this, plugin);
 
-        setClearMethod(sellTracker -> sellTracker.soldItems.clear());
+        setClearMethod(sellTracker -> {
+            System.out.println("Clearing sold counter!!");
+            sellTracker.soldItems.clear();
+        });
     }
 
     @Override
@@ -293,62 +293,20 @@ public final class SellMissions extends Mission<SellMissions.SellTracker> implem
         if (!superiorSkyblock.getMissions().canCompleteNoProgress(superiorPlayer, this))
             return;
 
-        if (resultItem.getType() == Material.PHANTOM_MEMBRANE) {
-            for (CropType cropType : CropManager.get().getCropTypes().values()) {
-                for (Map.Entry<Integer, ItemStack> entry : cropType.getProduce().entrySet()) {
-                    if (entry.getValue().getItemMeta().getDisplayName().equalsIgnoreCase(resultItem.getItemMeta().getDisplayName())) {
-                        String itemName = cropType.getId() + "-" + entry.getKey();
-
-                        boolean contains = false;
-                        outer:
-                        for (List<String> stacks : customItemsToSell.keySet()) {
-                            for (String stack : stacks) {
-                                if (stack.equalsIgnoreCase(itemName)) {
-                                    contains = true;
-                                    break outer;
-                                }
-                            }
-                        }
-                        if (!contains)
-                            return;
-
-                        trackItem(superiorPlayer, itemName, resultItem.getAmount());
-                        return;
-                    }
+        boolean contains = false;
+        outer:
+        for (List<ItemStack> stacks : itemsToSell.keySet()) {
+            for (ItemStack stack : stacks) {
+                if (stack.getType() == resultItem.getType()) {
+                    contains = true;
+                    break outer;
                 }
             }
-            return;
-        } else {
-            boolean contains = false;
-            outer:
-            for (List<ItemStack> stacks : itemsToSell.keySet()) {
-                for (ItemStack stack : stacks) {
-                    if (stack.getType() == resultItem.getType()) {
-                        contains = true;
-                        break outer;
-                    }
-                }
-            }
-            if (!contains)
-                return;
         }
+        if (!contains)
+            return;
 
         trackItem(superiorPlayer, resultItem);
-    }
-
-    @EventHandler(ignoreCancelled = true)
-    public void onScytherAutoSell(CropHarvesterEvent event) {
-        SuperiorPlayer superiorPlayer = SuperiorSkyblockAPI.getPlayer(event.getPlayer());
-        if (!superiorSkyblock.getMissions().canCompleteNoProgress(superiorPlayer, this))
-            return;
-
-        Material mat = Material.getMaterial(event.getProduce());
-        if (mat != null) {
-            trackItem(superiorPlayer, new ItemStack(mat, event.getAmount()));
-            return;
-        }
-
-        trackItem(superiorPlayer, event.getProduce(), event.getAmount());
     }
 
     private void trackItem(SuperiorPlayer superiorPlayer, ItemStack itemStack) {

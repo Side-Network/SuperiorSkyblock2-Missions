@@ -7,7 +7,6 @@ import com.bgsoftware.superiorskyblock.api.missions.Mission;
 import com.bgsoftware.superiorskyblock.api.missions.MissionLoadException;
 import com.bgsoftware.superiorskyblock.api.wrappers.SuperiorPlayer;
 import com.google.common.collect.ImmutableMap;
-import lv.side.sidecrops.events.CropRipeEvent;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
@@ -28,7 +27,6 @@ import org.bukkit.event.world.StructureGrowEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.plugin.java.JavaPlugin;
-import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
 import java.util.regex.Matcher;
@@ -219,41 +217,6 @@ public final class FarmingMissions extends Mission<FarmingMissions.FarmingTracke
         handlePlantGrow(e.getBlock(), e.getNewState());
     }
 
-    @EventHandler
-    public void onCustomCropRipe(CropRipeEvent e) {
-        String blockTypeName = "CUSTOM;" + e.getCropType().getId();
-
-        if (!isMissionPlant(blockTypeName))
-            return;
-
-        SuperiorPlayer superiorPlayer;
-        Island island = e.getIsland();
-
-        if (getIslandMission()) {
-            if (island == null)
-                return;
-
-            superiorPlayer = island.getOwner();
-        } else {
-            return;
-        }
-
-        if (!superiorSkyblock.getMissions().canCompleteNoProgress(superiorPlayer, this))
-            return;
-
-        FarmingTracker farmingTracker = getOrCreate(superiorPlayer, s -> new FarmingTracker());
-
-        if (farmingTracker == null)
-            return;
-
-        farmingTracker.track(blockTypeName);
-
-        Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, () -> superiorPlayer.runIfOnline(player -> {
-            if (canComplete(superiorPlayer))
-                SuperiorSkyblockAPI.getSuperiorSkyblock().getMissions().rewardMission(this, superiorPlayer, true);
-        }), 2L);
-    }
-
     private void handlePlantGrow(Block plantBlock, BlockState newState) {
         String blockTypeName = newState.getType().name();
         int age = newState.getRawData();
@@ -424,7 +387,6 @@ public final class FarmingMissions extends Mission<FarmingMissions.FarmingTracke
             return new BlockPosition(block.getWorld().getName(), block.getX(), block.getY(), block.getZ());
         }
 
-        @Nullable
         static BlockPosition deserialize(String serialized) {
             String[] sections = serialized.split(";");
             if (sections.length != 4)
