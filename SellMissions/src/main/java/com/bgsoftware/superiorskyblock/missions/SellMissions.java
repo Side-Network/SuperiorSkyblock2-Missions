@@ -92,10 +92,7 @@ public final class SellMissions extends Mission<SellMissions.SellTracker> implem
 
         Bukkit.getPluginManager().registerEvents(this, plugin);
 
-        setClearMethod(sellTracker -> {
-            System.out.println("Clearing sold counter!!");
-            sellTracker.soldItems.clear();
-        });
+        setClearMethod(sellTracker -> sellTracker.soldItems.clear());
     }
 
     @Override
