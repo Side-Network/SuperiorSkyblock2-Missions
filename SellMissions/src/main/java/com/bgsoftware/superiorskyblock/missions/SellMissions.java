@@ -5,6 +5,7 @@ import com.bgsoftware.superiorskyblock.api.SuperiorSkyblockAPI;
 import com.bgsoftware.superiorskyblock.api.missions.Mission;
 import com.bgsoftware.superiorskyblock.api.missions.MissionLoadException;
 import com.bgsoftware.superiorskyblock.api.wrappers.SuperiorPlayer;
+import lv.side.sbearth.events.SellWandSellEvent;
 import net.brcdev.shopgui.event.ShopPostTransactionEvent;
 import net.brcdev.shopgui.shop.ShopManager;
 import net.brcdev.shopgui.shop.ShopTransactionResult;
@@ -13,6 +14,7 @@ import org.bukkit.ChatColor;
 import org.bukkit.Material;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
@@ -304,6 +306,33 @@ public final class SellMissions extends Mission<SellMissions.SellTracker> implem
             return;
 
         trackItem(superiorPlayer, resultItem);
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onSellWandSellEvent(SellWandSellEvent event) {
+        Material material = Material.getMaterial(event.getType());
+
+        SuperiorPlayer superiorPlayer = SuperiorSkyblockAPI.getPlayer(event.getPlayer());
+        if (!superiorSkyblock.getMissions().canCompleteNoProgress(superiorPlayer, this))
+            return;
+
+        boolean contains = false;
+        outer:
+        for (List<ItemStack> stacks : itemsToSell.keySet()) {
+            for (ItemStack stack : stacks) {
+                if (stack.getType() == material) {
+                    contains = true;
+                    break outer;
+                }
+            }
+        }
+        if (!contains)
+            return;
+
+        ItemStack item = new ItemStack(material);
+        item.setAmount(event.getAmount());
+
+        trackItem(superiorPlayer, item);
     }
 
     private void trackItem(SuperiorPlayer superiorPlayer, ItemStack itemStack) {
