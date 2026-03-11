@@ -13,8 +13,7 @@ import org.bukkit.entity.HumanEntity;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
-import org.bukkit.event.inventory.InventoryClickEvent;
-import org.bukkit.event.inventory.InventoryType;
+import org.bukkit.event.player.PlayerItemConsumeEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.inventory.meta.ItemMeta;
@@ -30,7 +29,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @SuppressWarnings("unused")
-public final class CraftingMissions extends Mission<CraftingMissions.CraftingsTracker> implements Listener {
+public final class ConsumeMissions extends Mission<ConsumeMissions.ConsumingTracker> implements Listener {
 
     private static final SuperiorSkyblock superiorSkyblock = SuperiorSkyblockAPI.getSuperiorSkyblock();
 
@@ -38,7 +37,7 @@ public final class CraftingMissions extends Mission<CraftingMissions.CraftingsTr
             valuePattern = Pattern.compile("(.*)\\{value_(.+?)}(.*)"),
             requiredPattern = Pattern.compile("(.*)\\{required_(.+?)}(.*)");
 
-    private final Map<ItemStack, Integer> itemsToCraft = new HashMap<>();
+    private final Map<List<ItemStack>, Integer> itemsToConsume = new HashMap<>();
     private final Map<Material, String> itemsBossBar = new HashMap<>();
 
     private JavaPlugin plugin;
@@ -47,46 +46,67 @@ public final class CraftingMissions extends Mission<CraftingMissions.CraftingsTr
     public void load(JavaPlugin plugin, ConfigurationSection section) throws MissionLoadException {
         this.plugin = plugin;
 
-        if (!section.contains("craftings"))
-            throw new MissionLoadException("You must have the \"craftings\" section in the config.");
+        if (!section.contains("consume-items"))
+            throw new MissionLoadException("You must have the \"consume-items\" section in the config.");
 
-        for (String key : section.getConfigurationSection("craftings").getKeys(false)) {
-            String type = section.getString("craftings." + key + ".type");
-            short data = (short) section.getInt("craftings." + key + ".data", 0);
-            int amount = section.getInt("craftings." + key + ".amount", 1);
-            String bossBar = section.getString("craftings." + key + ".boss-bar", "?");
-            Material material;
+        for (String key : section.getConfigurationSection("consume-items").getKeys(false)) {
+            List<String> itemTypes = section.getStringList("consume-items." + key + ".types");
+            int amount = section.getInt("consume-items." + key + ".amount", 1);
 
-            try {
-                material = Material.valueOf(type);
-            } catch (IllegalArgumentException ex) {
-                throw new MissionLoadException("Invalid crafting result " + type + ".");
+            List<ItemStack> itemsToConsume = new ArrayList<>();
+            for (String itemType : itemTypes) {
+                byte data = 0;
+
+                if (itemType.contains(":")) {
+                    String[] sections = itemType.split(":");
+                    itemType = sections[0];
+                    try {
+                        data = sections.length == 2 ? Byte.parseByte(sections[1]) : 0;
+                    } catch (NumberFormatException ex) {
+                        throw new MissionLoadException("Invalid consume item data " + sections[1] + ".");
+                    }
+                }
+
+                Material material;
+
+                try {
+                    material = Material.valueOf(itemType);
+                } catch (IllegalArgumentException ex) {
+                    throw new MissionLoadException("Invalid consume item " + itemType + ".");
+                }
+
+                itemsToConsume.add(new ItemStack(material, 1, data));
             }
 
-            itemsToCraft.put(new ItemStack(material, 1, data), amount);
-            itemsBossBar.put(material, bossBar);
+            this.itemsToConsume.put(itemsToConsume, amount);
+            String bossBar = section.getString("consume-items." + key + ".boss-bar", "?");
+            for (ItemStack toConsume : itemsToConsume) {
+                itemsBossBar.put(toConsume.getType(), bossBar);
+            }
         }
 
         Bukkit.getPluginManager().registerEvents(this, plugin);
 
-        setClearMethod(craftingsTracker -> craftingsTracker.craftedItems.clear());
+        setClearMethod(consumingTracker -> consumingTracker.consumeItems.clear());
     }
 
     @Override
     public double getProgress(SuperiorPlayer superiorPlayer) {
-        CraftingsTracker craftingsTracker = get(superiorPlayer);
+        ConsumingTracker consumingTracker = get(superiorPlayer);
 
-        if (craftingsTracker == null)
+        if (consumingTracker == null)
             return 0.0;
 
         double multiplier = getPeakMemberMultiplier(superiorPlayer);
         int requiredItems = 0;
         int interactions = 0;
 
-        for (Map.Entry<ItemStack, Integer> entry : this.itemsToCraft.entrySet()) {
+        for (Map.Entry<List<ItemStack>, Integer> entry : this.itemsToConsume.entrySet()) {
+            if (entry.getKey().isEmpty())
+                continue;
             int scaledRequired = (int) Math.ceil(entry.getValue() * multiplier);
             requiredItems += scaledRequired;
-            interactions += Math.min(craftingsTracker.getCrafts(entry.getKey()), scaledRequired);
+            interactions += Math.min(consumingTracker.getConsumed(entry.getKey()), scaledRequired);
         }
 
         return (double) interactions / requiredItems;
@@ -94,16 +114,19 @@ public final class CraftingMissions extends Mission<CraftingMissions.CraftingsTr
 
     @Override
     public int getProgressValue(SuperiorPlayer superiorPlayer) {
-        CraftingsTracker craftingsTracker = get(superiorPlayer);
+        ConsumingTracker consumingTracker = get(superiorPlayer);
 
-        if (craftingsTracker == null)
+        if (consumingTracker == null)
             return 0;
 
         int interactions = 0;
 
         double multiplier = getPeakMemberMultiplier(superiorPlayer);
-        for (Map.Entry<ItemStack, Integer> entry : this.itemsToCraft.entrySet())
-            interactions += Math.min(craftingsTracker.getCrafts(entry.getKey()), (int) Math.ceil(entry.getValue() * multiplier));
+        for (Map.Entry<List<ItemStack>, Integer> entry : this.itemsToConsume.entrySet()) {
+            if (entry.getKey().isEmpty())
+                continue;
+            interactions += Math.min(consumingTracker.getConsumed(entry.getKey()), (int) Math.ceil(entry.getValue() * multiplier));
+        }
 
         return interactions;
     }
@@ -113,17 +136,31 @@ public final class CraftingMissions extends Mission<CraftingMissions.CraftingsTr
         ItemStack keyItem = itemStack.clone();
         keyItem.setAmount(1);
 
-        int required = this.itemsToCraft.getOrDefault(keyItem, 0);
-        return required > 0 ? (int) Math.ceil(required * multiplier) : 0;
+        for (Map.Entry<List<ItemStack>, Integer> entry : this.itemsToConsume.entrySet()) {
+            if (entry.getKey().contains(keyItem))
+                return (int) Math.ceil(entry.getValue() * multiplier);
+        }
+
+        return 0;
     }
 
     public int getProgress(SuperiorPlayer superiorPlayer, ItemStack itemStack) {
-        CraftingsTracker craftingsTracker = get(superiorPlayer);
-        if (craftingsTracker == null)
+        ConsumingTracker consumingTracker = get(superiorPlayer);
+        if (consumingTracker == null)
             return 0;
 
-        int scaledRequired = getRequired(superiorPlayer, itemStack);
-        return Math.min(craftingsTracker.getCrafts(itemStack), scaledRequired);
+        ItemStack keyItem = itemStack.clone();
+        keyItem.setAmount(1);
+        int progress = 0;
+
+        for (Map.Entry<List<ItemStack>, Integer> entry : this.itemsToConsume.entrySet()) {
+            if (!entry.getKey().contains(keyItem))
+                continue;
+            int scaledRequired = getRequired(superiorPlayer, itemStack);
+            progress += Math.min(consumingTracker.getConsumed(entry.getKey()), scaledRequired);
+        }
+
+        return progress;
     }
 
     @Override
@@ -138,12 +175,12 @@ public final class CraftingMissions extends Mission<CraftingMissions.CraftingsTr
 
     @Override
     public void saveProgress(ConfigurationSection section) {
-        for (Map.Entry<SuperiorPlayer, CraftingsTracker> entry : entrySet()) {
+        for (Map.Entry<SuperiorPlayer, ConsumingTracker> entry : entrySet()) {
             String uuid = entry.getKey().getUniqueId().toString();
             int index = 0;
-            for (Map.Entry<ItemStack, Integer> craftedEntry : entry.getValue().craftedItems.entrySet()) {
-                section.set(uuid + "." + index + ".item", craftedEntry.getKey());
-                section.set(uuid + "." + index + ".amount", craftedEntry.getValue());
+            for (Map.Entry<ItemStack, Integer> consumedEntry : entry.getValue().consumeItems.entrySet()) {
+                section.set(uuid + "." + index + ".item", consumedEntry.getKey());
+                section.set(uuid + "." + index + ".amount", consumedEntry.getValue());
                 index++;
             }
         }
@@ -155,36 +192,36 @@ public final class CraftingMissions extends Mission<CraftingMissions.CraftingsTr
             if (uuid.equals("players"))
                 continue;
 
-            CraftingsTracker craftingsTracker = new CraftingsTracker();
+            ConsumingTracker consumingTracker = new ConsumingTracker();
             UUID playerUUID = UUID.fromString(uuid);
             SuperiorPlayer superiorPlayer = SuperiorSkyblockAPI.getPlayer(playerUUID);
 
-            insertData(superiorPlayer, craftingsTracker);
+            insertData(superiorPlayer, consumingTracker);
 
             for (String key : section.getConfigurationSection(uuid).getKeys(false)) {
                 ItemStack itemStack = section.getItemStack(uuid + "." + key + ".item");
                 int amount = section.getInt(uuid + "." + key + ".amount");
-                craftingsTracker.craftedItems.put(itemStack, amount);
+                consumingTracker.consumeItems.put(itemStack, amount);
             }
         }
     }
 
     @Override
     public void formatItem(SuperiorPlayer superiorPlayer, ItemStack itemStack) {
-        CraftingsTracker craftingsTracker = getOrCreate(superiorPlayer, s -> new CraftingsTracker());
+        ConsumingTracker consumingTracker = getOrCreate(superiorPlayer, s -> new ConsumingTracker());
 
-        if(craftingsTracker == null)
+        if(consumingTracker == null)
             return;
 
         ItemMeta itemMeta = itemStack.getItemMeta();
 
         if (itemMeta.hasDisplayName())
-            itemMeta.setDisplayName(parsePlaceholders(superiorPlayer, craftingsTracker, itemMeta.getDisplayName()));
+            itemMeta.setDisplayName(parsePlaceholders(superiorPlayer, consumingTracker, itemMeta.getDisplayName()));
 
         if (itemMeta.hasLore()) {
             List<String> lore = new ArrayList<>();
             for (String line : itemMeta.getLore())
-                lore.add(parsePlaceholders(superiorPlayer, craftingsTracker, line));
+                lore.add(parsePlaceholders(superiorPlayer, consumingTracker, line));
             itemMeta.setLore(lore);
         }
 
@@ -192,32 +229,16 @@ public final class CraftingMissions extends Mission<CraftingMissions.CraftingsTr
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
-    public void onInventoryClick(InventoryClickEvent e) {
-        if (e.getClickedInventory() == null || (e.getClickedInventory().getType() != InventoryType.WORKBENCH &&
-                e.getClickedInventory().getType() != InventoryType.CRAFTING && e.getClickedInventory().getType() != InventoryType.FURNACE))
+    public void onItemConsume(PlayerItemConsumeEvent e) {
+        SuperiorPlayer superiorPlayer = SuperiorSkyblockAPI.getPlayer(e.getPlayer());
+        if (!superiorSkyblock.getMissions().canCompleteNoProgress(superiorPlayer, this))
             return;
 
-        int requiredSlot = e.getClickedInventory().getType() == InventoryType.FURNACE ? 2 : 0;
-
-        ItemStack resultItem = e.getCurrentItem().clone();
-        resultItem.setAmount(1);
-
-        SuperiorPlayer superiorPlayer = SuperiorSkyblockAPI.getPlayer(e.getWhoClicked().getUniqueId());
-
-        if (e.getRawSlot() == requiredSlot && itemsToCraft.containsKey(resultItem) &&
-                superiorSkyblock.getMissions().canCompleteNoProgress(superiorPlayer, this)) {
-            int amountOfResult = countItems(e.getWhoClicked(), resultItem);
-            Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                int afterTickAmountOfResult = countItems(e.getWhoClicked(), resultItem);
-                resultItem.setAmount(afterTickAmountOfResult - amountOfResult);
-                trackItem(superiorPlayer, resultItem);
-            }, 1L);
-        }
-
+        trackItem(superiorPlayer, e.getItem());
     }
 
     private void trackItem(SuperiorPlayer superiorPlayer, ItemStack itemStack) {
-        CraftingsTracker blocksTracker = getOrCreate(superiorPlayer, s -> new CraftingsTracker());
+        ConsumingTracker blocksTracker = getOrCreate(superiorPlayer, s -> new ConsumingTracker());
         if (blocksTracker == null)
             return;
 
@@ -244,44 +265,27 @@ public final class CraftingMissions extends Mission<CraftingMissions.CraftingsTr
                 amount += invItem.getAmount();
         }
 
-        if (itemStack.isSimilar(humanEntity.getItemOnCursor()))
+        if (humanEntity.getItemOnCursor() != null && itemStack.isSimilar(humanEntity.getItemOnCursor()))
             amount += humanEntity.getItemOnCursor().getAmount();
 
         return amount;
     }
 
-    private static int countSimpleItems(HumanEntity humanEntity, ItemStack itemStack) {
-        int amount = 0;
-
-        if (itemStack == null)
-            return amount;
-
-        PlayerInventory playerInventory = humanEntity.getInventory();
-
-        for (ItemStack invItem : playerInventory.getContents()) {
-            if (invItem != null && itemStack.getType() == invItem.getType())
-                amount += invItem.getAmount();
-        }
-
-        if (itemStack.getType() == humanEntity.getItemOnCursor().getType())
-            amount += humanEntity.getItemOnCursor().getAmount();
-
-        return amount;
-    }
-
-    private String parsePlaceholders(SuperiorPlayer superiorPlayer, CraftingsTracker entityTracker, String line) {
+    private String parsePlaceholders(SuperiorPlayer superiorPlayer, ConsumingTracker consumingTracker, String line) {
         Matcher matcher = percentagePattern.matcher(line);
         double multiplier = getPeakMemberMultiplier(superiorPlayer);
 
         if (matcher.matches()) {
             try {
-                String requiredBlock = matcher.group(2).toUpperCase();
-                ItemStack itemStack = new ItemStack(Material.valueOf(requiredBlock));
-                Optional<Map.Entry<ItemStack, Integer>> entry = itemsToCraft.entrySet().stream().filter(e -> e.getKey().isSimilar(itemStack)).findAny();
+                String requiredItem = matcher.group(2).toUpperCase();
+                ItemStack itemStack = new ItemStack(Material.valueOf(requiredItem));
+                Optional<Map.Entry<List<ItemStack>, Integer>> entry = itemsToConsume.entrySet().stream()
+                        .filter(e -> e.getKey().contains(itemStack)).findAny();
+
                 if (entry.isPresent()) {
                     int scaledRequired = (int) Math.ceil(entry.get().getValue() * multiplier);
                     line = line.replace("{percentage_" + matcher.group(2) + "}",
-                            "" + (entityTracker.getCrafts(itemStack) * 100) / scaledRequired);
+                            "" + (consumingTracker.getConsumed(entry.get().getKey()) * 100) / scaledRequired);
                 }
             } catch (Exception ignored) {
             }
@@ -291,10 +295,12 @@ public final class CraftingMissions extends Mission<CraftingMissions.CraftingsTr
             try {
                 String requiredBlock = matcher.group(2).toUpperCase();
                 ItemStack itemStack = new ItemStack(Material.valueOf(requiredBlock));
-                Optional<Map.Entry<ItemStack, Integer>> entry = itemsToCraft.entrySet().stream().filter(e -> e.getKey().isSimilar(itemStack)).findAny();
+                Optional<Map.Entry<List<ItemStack>, Integer>> entry = itemsToConsume.entrySet().stream()
+                        .filter(e -> e.getKey().contains(itemStack)).findAny();
+
                 if (entry.isPresent()) {
                     line = line.replace("{value_" + matcher.group(2) + "}",
-                            "" + (entityTracker.getCrafts(itemStack)));
+                            "" + (consumingTracker.getConsumed(entry.get().getKey())));
                 }
             } catch (Exception ignored) {
             }
@@ -304,7 +310,9 @@ public final class CraftingMissions extends Mission<CraftingMissions.CraftingsTr
             try {
                 String requiredBlock = matcher.group(2).toUpperCase();
                 ItemStack itemStack = new ItemStack(Material.valueOf(requiredBlock));
-                Optional<Map.Entry<ItemStack, Integer>> entry = itemsToCraft.entrySet().stream().filter(e -> e.getKey().isSimilar(itemStack)).findAny();
+                Optional<Map.Entry<List<ItemStack>, Integer>> entry = itemsToConsume.entrySet().stream()
+                        .filter(e -> e.getKey().contains(itemStack)).findAny();
+
                 if (entry.isPresent()) {
                     int scaledRequired = (int) Math.ceil(entry.get().getValue() * multiplier);
                     line = line.replace("{required_" + matcher.group(2) + "}",
@@ -317,22 +325,25 @@ public final class CraftingMissions extends Mission<CraftingMissions.CraftingsTr
         return ChatColor.translateAlternateColorCodes('&', line);
     }
 
-    public static class CraftingsTracker {
+    public static class ConsumingTracker {
 
-        private final Map<ItemStack, Integer> craftedItems = new HashMap<>();
+        private final Map<ItemStack, Integer> consumeItems = new HashMap<>();
 
         void trackItem(ItemStack itemStack) {
             ItemStack keyItem = itemStack.clone();
             keyItem.setAmount(1);
-            craftedItems.put(keyItem, craftedItems.getOrDefault(keyItem, 0) + itemStack.getAmount());
+            consumeItems.put(keyItem, consumeItems.getOrDefault(keyItem, 0) + itemStack.getAmount());
         }
 
-        int getCrafts(ItemStack itemStack) {
-            ItemStack keyItem = itemStack.clone();
-            keyItem.setAmount(1);
-            return craftedItems.getOrDefault(keyItem, 0);
-        }
+        int getConsumed(List<ItemStack> itemStacks) {
+            int consumed = 0;
 
+            for (ItemStack itemStack : itemStacks) {
+                consumed += consumeItems.getOrDefault(itemStack, 0);
+            }
+
+            return consumed;
+        }
     }
 
 }

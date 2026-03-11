@@ -25,4 +25,5 @@ include 'MythicMobKillsMissions'
 include 'SmeltMissions'
 include 'CitadelCrystalMissions'
 include 'ShopkeeperMissions'
+include 'ConsumeMissions'
 

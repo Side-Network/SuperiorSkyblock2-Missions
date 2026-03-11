@@ -1,5 +1,5 @@
 group 'ShopkeeperMissions'
 
 dependencies {
-    compileOnly(files("SideCitadel.jar"))
+    compileOnly(files("CitadelMining-1.0-SNAPSHOT.jar"))
 }

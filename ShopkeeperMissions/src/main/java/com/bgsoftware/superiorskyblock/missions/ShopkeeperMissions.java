@@ -26,7 +26,8 @@ public final class ShopkeeperMissions extends Mission<ShopkeeperMissions.TradeTr
     private static final SuperiorSkyblock superiorSkyblock = SuperiorSkyblockAPI.getSuperiorSkyblock();
 
     private static final Pattern percentagePattern = Pattern.compile("(.*)\\{percentage_(.+?)}(.*)"),
-            valuePattern = Pattern.compile("(.*)\\{value_(.+?)}(.*)");
+            valuePattern = Pattern.compile("(.*)\\{value_(.+?)}(.*)"),
+            requiredPattern = Pattern.compile("(.*)\\{required_(.+?)}(.*)");
 
     private final Map<Material, Integer> itemsToTrade = new HashMap<>();
     private final Map<Material, String> itemsBossBar = new HashMap<>();
@@ -68,12 +69,14 @@ public final class ShopkeeperMissions extends Mission<ShopkeeperMissions.TradeTr
         if (tradeTracker == null)
             return 0.0;
 
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
         int requiredItems = 0;
         int interactions = 0;
 
         for (Map.Entry<Material, Integer> entry : this.itemsToTrade.entrySet()) {
-            requiredItems += entry.getValue();
-            interactions += Math.min(tradeTracker.getBroken(entry.getKey()), entry.getValue());
+            int scaledRequired = (int) Math.ceil(entry.getValue() * multiplier);
+            requiredItems += scaledRequired;
+            interactions += Math.min(tradeTracker.getBroken(entry.getKey()), scaledRequired);
         }
 
         return (double) interactions / requiredItems;
@@ -88,14 +91,17 @@ public final class ShopkeeperMissions extends Mission<ShopkeeperMissions.TradeTr
 
         int interactions = 0;
 
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
         for (Map.Entry<Material, Integer> entry : this.itemsToTrade.entrySet())
-            interactions += Math.min(tradeTracker.getBroken(entry.getKey()), entry.getValue());
+            interactions += Math.min(tradeTracker.getBroken(entry.getKey()), (int) Math.ceil(entry.getValue() * multiplier));
 
         return interactions;
     }
 
-    public int getRequired(Material material) {
-        return this.itemsToTrade.getOrDefault(material, 0);
+    public int getRequired(SuperiorPlayer superiorPlayer, Material material) {
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
+        int required = this.itemsToTrade.getOrDefault(material, 0);
+        return required > 0 ? (int) Math.ceil(required * multiplier) : 0;
     }
 
     public int getProgress(SuperiorPlayer superiorPlayer, Material material) {
@@ -103,7 +109,8 @@ public final class ShopkeeperMissions extends Mission<ShopkeeperMissions.TradeTr
         if (tradeTracker == null)
             return 0;
 
-        return tradeTracker.getBroken(material);
+        int scaledRequired = getRequired(superiorPlayer, material);
+        return Math.min(tradeTracker.getBroken(material), scaledRequired);
     }
 
     @Override
@@ -159,12 +166,12 @@ public final class ShopkeeperMissions extends Mission<ShopkeeperMissions.TradeTr
         ItemMeta itemMeta = itemStack.getItemMeta();
 
         if (itemMeta.hasDisplayName())
-            itemMeta.setDisplayName(parsePlaceholders(tradeTracker, itemMeta.getDisplayName()));
+            itemMeta.setDisplayName(parsePlaceholders(superiorPlayer, tradeTracker, itemMeta.getDisplayName()));
 
         if (itemMeta.hasLore()) {
             List<String> lore = new ArrayList<>();
             for (String line : itemMeta.getLore())
-                lore.add(parsePlaceholders(tradeTracker, line));
+                lore.add(parsePlaceholders(superiorPlayer, tradeTracker, line));
             itemMeta.setLore(lore);
         }
 
@@ -187,7 +194,7 @@ public final class ShopkeeperMissions extends Mission<ShopkeeperMissions.TradeTr
 
         tradeTracker.trackMaterial(item.getType(), item.getAmount());
         if (itemsBossBar.containsKey(item.getType()))
-            sendBossBar(superiorPlayer, itemsBossBar.get(item.getType()), getProgress(superiorPlayer, item.getType()), getRequired(item.getType()), getProgress(superiorPlayer));
+            sendBossBar(superiorPlayer, itemsBossBar.get(item.getType()), getProgress(superiorPlayer, item.getType()), getRequired(superiorPlayer, item.getType()), getProgress(superiorPlayer));
 
         Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, () -> superiorPlayer.runIfOnline(player -> {
             if (canComplete(superiorPlayer))
@@ -195,8 +202,9 @@ public final class ShopkeeperMissions extends Mission<ShopkeeperMissions.TradeTr
         }), 2L);
     }
 
-    private String parsePlaceholders(TradeTracker tradeTracker, String line) {
+    private String parsePlaceholders(SuperiorPlayer superiorPlayer, TradeTracker tradeTracker, String line) {
         Matcher matcher = percentagePattern.matcher(line);
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
 
         if (matcher.matches()) {
             try {
@@ -204,8 +212,9 @@ public final class ShopkeeperMissions extends Mission<ShopkeeperMissions.TradeTr
                 Material material = Material.valueOf(requiredMaterial);
                 Optional<Map.Entry<Material, Integer>> entry = itemsToTrade.entrySet().stream().filter(e -> e.getKey() == material).findAny();
                 if (entry.isPresent()) {
+                    int scaledRequired = (int) Math.ceil(entry.get().getValue() * multiplier);
                     line = line.replace("{percentage_" + matcher.group(2) + "}",
-                            "" + (tradeTracker.getBroken(material) * 100) / entry.get().getValue());
+                            "" + (tradeTracker.getBroken(material) * 100) / scaledRequired);
                 }
             } catch (Exception ignored) {
             }
@@ -219,6 +228,20 @@ public final class ShopkeeperMissions extends Mission<ShopkeeperMissions.TradeTr
                 if (entry.isPresent()) {
                     line = line.replace("{value_" + matcher.group(2) + "}",
                             "" + (tradeTracker.getBroken(material)));
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
+        if ((matcher = requiredPattern.matcher(line)).matches()) {
+            try {
+                String requiredMaterial = matcher.group(2).toUpperCase();
+                Material material = Material.valueOf(requiredMaterial);
+                Optional<Map.Entry<Material, Integer>> entry = itemsToTrade.entrySet().stream().filter(e -> e.getKey() == material).findAny();
+                if (entry.isPresent()) {
+                    int scaledRequired = (int) Math.ceil(entry.get().getValue() * multiplier);
+                    line = line.replace("{required_" + matcher.group(2) + "}",
+                            "" + scaledRequired);
                 }
             } catch (Exception ignored) {
             }

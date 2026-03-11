@@ -35,7 +35,8 @@ public final class BreedMissions extends Mission<BreedMissions.BreedTracker> imp
     private static final SuperiorSkyblock superiorSkyblock = SuperiorSkyblockAPI.getSuperiorSkyblock();
 
     private static final Pattern percentagePattern = Pattern.compile("(.*)\\{percentage_(.+?)}(.*)"),
-            valuePattern = Pattern.compile("(.*)\\{value_(.+?)}(.*)");
+            valuePattern = Pattern.compile("(.*)\\{value_(.+?)}(.*)"),
+            requiredPattern = Pattern.compile("(.*)\\{required_(.+?)}(.*)");
 
     private JavaPlugin plugin;
     private final Map<List<String>, Integer> requiredEntities = new HashMap<>();
@@ -75,12 +76,14 @@ public final class BreedMissions extends Mission<BreedMissions.BreedTracker> imp
         if (breedTracker == null)
             return 0.0;
 
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
         int requiredEntities = 0;
         int bred = 0;
 
         for (Map.Entry<List<String>, Integer> requiredEntity : this.requiredEntities.entrySet()) {
-            requiredEntities += requiredEntity.getValue();
-            bred += Math.min(breedTracker.getBred(requiredEntity.getKey()), requiredEntity.getValue());
+            int scaledRequired = (int) Math.ceil(requiredEntity.getValue() * multiplier);
+            requiredEntities += scaledRequired;
+            bred += Math.min(breedTracker.getBred(requiredEntity.getKey()), scaledRequired);
         }
 
         return (double) bred / requiredEntities;
@@ -95,16 +98,18 @@ public final class BreedMissions extends Mission<BreedMissions.BreedTracker> imp
 
         int bred = 0;
 
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
         for (Map.Entry<List<String>, Integer> requiredEntity : this.requiredEntities.entrySet())
-            bred += Math.min(breedTracker.getBred(requiredEntity.getKey()), requiredEntity.getValue());
+            bred += Math.min(breedTracker.getBred(requiredEntity.getKey()), (int) Math.ceil(requiredEntity.getValue() * multiplier));
 
         return bred;
     }
 
-    public int getRequired(EntityType type) {
+    public int getRequired(SuperiorPlayer superiorPlayer, EntityType type) {
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
         for (Map.Entry<List<String>, Integer> entry : requiredEntities.entrySet()) {
             if (entry.getKey().contains(type.name()))
-                return entry.getValue();
+                return (int) Math.ceil(entry.getValue() * multiplier);
         }
 
         return 0;
@@ -115,7 +120,8 @@ public final class BreedMissions extends Mission<BreedMissions.BreedTracker> imp
         if (breedTracker == null)
             return 0;
 
-        return breedTracker.getBred(type.name());
+        int scaledRequired = getRequired(superiorPlayer, type);
+        return Math.min(breedTracker.getBred(type.name()), scaledRequired);
     }
 
     @Override
@@ -164,12 +170,12 @@ public final class BreedMissions extends Mission<BreedMissions.BreedTracker> imp
         ItemMeta itemMeta = itemStack.getItemMeta();
 
         if (itemMeta.hasDisplayName())
-            itemMeta.setDisplayName(parsePlaceholders(breedTracker, itemMeta.getDisplayName()));
+            itemMeta.setDisplayName(parsePlaceholders(superiorPlayer, breedTracker, itemMeta.getDisplayName()));
 
         if (itemMeta.hasLore()) {
             List<String> lore = new ArrayList<>();
             for (String line : itemMeta.getLore())
-                lore.add(parsePlaceholders(breedTracker, line));
+                lore.add(parsePlaceholders(superiorPlayer, breedTracker, line));
             itemMeta.setLore(lore);
         }
 
@@ -194,7 +200,7 @@ public final class BreedMissions extends Mission<BreedMissions.BreedTracker> imp
 
         breedTracker.track(e.getEntity().getType().name(), 1);
         if (entityBossBar.containsKey(e.getEntityType()))
-            sendBossBar(superiorPlayer, entityBossBar.get(e.getEntityType()), getProgress(superiorPlayer, e.getEntityType()), getRequired(e.getEntityType()), getProgress(superiorPlayer));
+            sendBossBar(superiorPlayer, entityBossBar.get(e.getEntityType()), getProgress(superiorPlayer, e.getEntityType()), getRequired(superiorPlayer, e.getEntityType()), getProgress(superiorPlayer));
 
         Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, () -> superiorPlayer.runIfOnline(player -> {
             if (canComplete(superiorPlayer))
@@ -214,15 +220,17 @@ public final class BreedMissions extends Mission<BreedMissions.BreedTracker> imp
         return false;
     }
 
-    private String parsePlaceholders(BreedTracker breedTracker, String line) {
+    private String parsePlaceholders(SuperiorPlayer superiorPlayer, BreedTracker breedTracker, String line) {
         Matcher matcher = percentagePattern.matcher(line);
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
 
         if (matcher.matches()) {
             String requiredBlock = matcher.group(2).toUpperCase();
             Optional<Map.Entry<List<String>, Integer>> entry = requiredEntities.entrySet().stream().filter(e -> e.getKey().contains(requiredBlock)).findAny();
             if (entry.isPresent()) {
+                int scaledRequired = (int) Math.ceil(entry.get().getValue() * multiplier);
                 line = line.replace("{percentage_" + matcher.group(2) + "}",
-                        "" + (breedTracker.getBred(Collections.singletonList(requiredBlock)) * 100) / entry.get().getValue());
+                        "" + (breedTracker.getBred(Collections.singletonList(requiredBlock)) * 100) / scaledRequired);
             }
         }
 
@@ -232,6 +240,16 @@ public final class BreedMissions extends Mission<BreedMissions.BreedTracker> imp
             if (entry.isPresent()) {
                 line = line.replace("{value_" + matcher.group(2) + "}",
                         "" + breedTracker.getBred(Collections.singletonList(requiredBlock)));
+            }
+        }
+
+        if ((matcher = requiredPattern.matcher(line)).matches()) {
+            String requiredBlock = matcher.group(2).toUpperCase();
+            Optional<Map.Entry<List<String>, Integer>> entry = requiredEntities.entrySet().stream().filter(e -> e.getKey().contains(requiredBlock)).findFirst();
+            if (entry.isPresent()) {
+                int scaledRequired = (int) Math.ceil(entry.get().getValue() * multiplier);
+                line = line.replace("{required_" + matcher.group(2) + "}",
+                        "" + scaledRequired);
             }
         }
 

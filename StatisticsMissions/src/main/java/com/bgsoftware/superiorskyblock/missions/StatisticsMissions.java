@@ -33,7 +33,8 @@ public final class StatisticsMissions extends Mission<Void> implements Listener 
     private static final SuperiorSkyblock superiorSkyblock = SuperiorSkyblockAPI.getSuperiorSkyblock();
 
     private static final Pattern percentagePattern = Pattern.compile("(.*)\\{percentage_(.+?)}(.*)"),
-            valuePattern = Pattern.compile("(.*)\\{value_(.+?)}(.*)");
+            valuePattern = Pattern.compile("(.*)\\{value_(.+?)}(.*)"),
+            requiredPattern = Pattern.compile("(.*)\\{required_(.+?)}(.*)");
 
     private final Map<List<String>, Integer> requiredStatistics = new HashMap<>();
 
@@ -65,8 +66,9 @@ public final class StatisticsMissions extends Mission<Void> implements Listener 
         if (player == null)
             return progress;
 
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
         for (List<String> requiredStatistic : requiredStatistics.keySet()) {
-            int requiredAmount = requiredStatistics.get(requiredStatistic);
+            int requiredAmount = (int) Math.ceil(requiredStatistics.get(requiredStatistic) * multiplier);
             int statisticAmount = 0;
             for (String statistic : requiredStatistic) {
                 int currentStatisticAmount = getStatisticAmount(player, statistic);
@@ -99,8 +101,9 @@ public final class StatisticsMissions extends Mission<Void> implements Listener 
         if (player == null)
             return totalItemAmount;
 
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
         for (List<String> requiredStatistic : requiredStatistics.keySet()) {
-            int requiredAmount = requiredStatistics.get(requiredStatistic);
+            int requiredAmount = (int) Math.ceil(requiredStatistics.get(requiredStatistic) * multiplier);
             int statisticAmount = 0;
             for (String statistic : requiredStatistic) {
                 int currentItemAmount = getStatisticAmount(player, statistic);
@@ -139,12 +142,12 @@ public final class StatisticsMissions extends Mission<Void> implements Listener 
         ItemMeta itemMeta = itemStack.getItemMeta();
 
         if (itemMeta.hasDisplayName())
-            itemMeta.setDisplayName(parsePlaceholders(player, itemMeta.getDisplayName()));
+            itemMeta.setDisplayName(parsePlaceholders(superiorPlayer, player, itemMeta.getDisplayName()));
 
         if (itemMeta.hasLore()) {
             List<String> lore = new ArrayList<>();
             for (String line : itemMeta.getLore())
-                lore.add(parsePlaceholders(player, line));
+                lore.add(parsePlaceholders(superiorPlayer, player, line));
             itemMeta.setLore(lore);
         }
 
@@ -178,8 +181,9 @@ public final class StatisticsMissions extends Mission<Void> implements Listener 
         return false;
     }
 
-    private String parsePlaceholders(Player player, String line) {
+    private String parsePlaceholders(SuperiorPlayer superiorPlayer, Player player, String line) {
         Matcher matcher = percentagePattern.matcher(line);
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
 
         if (matcher.matches()) {
             String requiredStatistic = matcher.group(2).toUpperCase();
@@ -189,8 +193,9 @@ public final class StatisticsMissions extends Mission<Void> implements Listener 
                     .filter(e -> e.getKey().contains(requiredStatistic)).findAny();
 
             if (entry.isPresent()) {
+                int scaledRequired = (int) Math.ceil(entry.get().getValue() * multiplier);
                 line = line.replace("{percentage_" + matcher.group(2) + "}",
-                        "" + (value * 100) / entry.get().getValue());
+                        "" + (value * 100) / scaledRequired);
             }
         }
 
@@ -204,6 +209,19 @@ public final class StatisticsMissions extends Mission<Void> implements Listener 
             if (entry.isPresent()) {
                 line = line.replace("{value_" + matcher.group(2) + "}",
                         "" + value);
+            }
+        }
+
+        if ((matcher = requiredPattern.matcher(line)).matches()) {
+            String requiredStatistic = matcher.group(2).toUpperCase();
+
+            Optional<Map.Entry<List<String>, Integer>> entry = requiredStatistics.entrySet().stream()
+                    .filter(e -> e.getKey().contains(requiredStatistic)).findAny();
+
+            if (entry.isPresent()) {
+                int scaledRequired = (int) Math.ceil(entry.get().getValue() * multiplier);
+                line = line.replace("{required_" + matcher.group(2) + "}",
+                        "" + scaledRequired);
             }
         }
 

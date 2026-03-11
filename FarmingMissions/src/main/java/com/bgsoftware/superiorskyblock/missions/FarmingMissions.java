@@ -28,7 +28,6 @@ import org.bukkit.event.world.StructureGrowEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.plugin.java.JavaPlugin;
-import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
 import java.util.regex.Matcher;
@@ -40,7 +39,8 @@ public final class FarmingMissions extends Mission<FarmingMissions.FarmingTracke
     private static final SuperiorSkyblock superiorSkyblock = SuperiorSkyblockAPI.getSuperiorSkyblock();
 
     private static final Pattern percentagePattern = Pattern.compile("(.*)\\{percentage_(.+?)}(.*)"),
-            valuePattern = Pattern.compile("(.*)\\{value_(.+?)}(.*)");
+            valuePattern = Pattern.compile("(.*)\\{value_(.+?)}(.*)"),
+            requiredPattern = Pattern.compile("(.*)\\{required_(.+?)}(.*)");
 
     private static final BlockFace[] NEARBY_BLOCKS = new BlockFace[]{
             BlockFace.EAST, BlockFace.WEST, BlockFace.NORTH, BlockFace.SOUTH
@@ -91,12 +91,14 @@ public final class FarmingMissions extends Mission<FarmingMissions.FarmingTracke
         if (farmingTracker == null)
             return 0.0;
 
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
         int requiredPlants = 0;
         int progress = 0;
 
         for (Map.Entry<List<String>, Integer> requiredPlant : this.requiredPlants.entrySet()) {
-            requiredPlants += requiredPlant.getValue();
-            progress += Math.min(farmingTracker.getPlants(requiredPlant.getKey()), requiredPlant.getValue());
+            int scaledRequired = (int) Math.ceil(requiredPlant.getValue() * multiplier);
+            requiredPlants += scaledRequired;
+            progress += Math.min(farmingTracker.getPlants(requiredPlant.getKey()), scaledRequired);
         }
 
         return (double) progress / requiredPlants;
@@ -111,8 +113,9 @@ public final class FarmingMissions extends Mission<FarmingMissions.FarmingTracke
 
         int progress = 0;
 
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
         for (Map.Entry<List<String>, Integer> requiredPlant : this.requiredPlants.entrySet())
-            progress += Math.min(farmingTracker.getPlants(requiredPlant.getKey()), requiredPlant.getValue());
+            progress += Math.min(farmingTracker.getPlants(requiredPlant.getKey()), (int) Math.ceil(requiredPlant.getValue() * multiplier));
 
         return progress;
     }
@@ -166,12 +169,12 @@ public final class FarmingMissions extends Mission<FarmingMissions.FarmingTracke
         ItemMeta itemMeta = itemStack.getItemMeta();
 
         if (itemMeta.hasDisplayName())
-            itemMeta.setDisplayName(parsePlaceholders(farmingTracker, itemMeta.getDisplayName()));
+            itemMeta.setDisplayName(parsePlaceholders(superiorPlayer, farmingTracker, itemMeta.getDisplayName()));
 
         if (itemMeta.hasLore()) {
             List<String> lore = new ArrayList<>();
             for (String line : itemMeta.getLore())
-                lore.add(parsePlaceholders(farmingTracker, line));
+                lore.add(parsePlaceholders(superiorPlayer, farmingTracker, line));
             itemMeta.setLore(lore);
         }
 
@@ -356,8 +359,9 @@ public final class FarmingMissions extends Mission<FarmingMissions.FarmingTracke
         return false;
     }
 
-    private String parsePlaceholders(FarmingTracker farmingTracker, String line) {
+    private String parsePlaceholders(SuperiorPlayer superiorPlayer, FarmingTracker farmingTracker, String line) {
         Matcher matcher = percentagePattern.matcher(line);
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
 
         if (matcher.matches()) {
             String requiredBlock = matcher.group(2).toUpperCase();
@@ -366,8 +370,9 @@ public final class FarmingMissions extends Mission<FarmingMissions.FarmingTracke
                     e.getKey().contains(requiredBlock) || e.getKey().contains(requiredCustomBlock)
             ).findAny();
             if (entry.isPresent()) {
+                int scaledRequired = (int) Math.ceil(entry.get().getValue() * multiplier);
                 line = line.replace("{percentage_" + matcher.group(2) + "}",
-                        "" + (farmingTracker.getPlants(entry.get().getKey()) * 100) / entry.get().getValue());
+                        "" + (farmingTracker.getPlants(entry.get().getKey()) * 100) / scaledRequired);
             }
         }
 
@@ -380,6 +385,19 @@ public final class FarmingMissions extends Mission<FarmingMissions.FarmingTracke
             if (entry.isPresent()) {
                 line = line.replace("{value_" + matcher.group(2) + "}",
                         "" + farmingTracker.getPlants(entry.get().getKey()));
+            }
+        }
+
+        if ((matcher = requiredPattern.matcher(line)).matches()) {
+            String requiredBlock = matcher.group(2).toUpperCase();
+            String requiredCustomBlock = matcher.group(2);
+            Optional<Map.Entry<List<String>, Integer>> entry = requiredPlants.entrySet().stream().filter(e ->
+                    e.getKey().contains(requiredBlock) || e.getKey().contains(requiredCustomBlock)
+            ).findFirst();
+            if (entry.isPresent()) {
+                int scaledRequired = (int) Math.ceil(entry.get().getValue() * multiplier);
+                line = line.replace("{required_" + matcher.group(2) + "}",
+                        "" + scaledRequired);
             }
         }
 
@@ -424,7 +442,6 @@ public final class FarmingMissions extends Mission<FarmingMissions.FarmingTracke
             return new BlockPosition(block.getWorld().getName(), block.getX(), block.getY(), block.getZ());
         }
 
-        @Nullable
         static BlockPosition deserialize(String serialized) {
             String[] sections = serialized.split(";");
             if (sections.length != 4)

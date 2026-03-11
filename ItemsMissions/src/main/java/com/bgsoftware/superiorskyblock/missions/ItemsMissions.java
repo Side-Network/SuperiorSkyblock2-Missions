@@ -69,6 +69,7 @@ public final class ItemsMissions extends Mission<ItemsMissions.ItemsTracker> imp
         Inventory inventory = player.getInventory();
         Map<ItemStack, Integer> countedItems = countItems(inventory);
 
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
         int totalRequiredAmount = 0;
         int totalItemAmount = 0;
 
@@ -78,7 +79,7 @@ public final class ItemsMissions extends Mission<ItemsMissions.ItemsTracker> imp
             return 0.0;
 
         for (List<String> requiredItem : requiredItems.keySet()) {
-            int requiredAmount = requiredItems.get(requiredItem);
+            int requiredAmount = (int) Math.ceil(requiredItems.get(requiredItem) * multiplier);
             int itemAmount = 0;
             for (String item : requiredItem) {
                 try {
@@ -126,8 +127,9 @@ public final class ItemsMissions extends Mission<ItemsMissions.ItemsTracker> imp
         if (itemsTracker == null)
             return 0;
 
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
         for (List<String> requiredItem : requiredItems.keySet()) {
-            int requiredAmount = requiredItems.get(requiredItem);
+            int requiredAmount = (int) Math.ceil(requiredItems.get(requiredItem) * multiplier);
             int itemAmount = 0;
             for (String item : requiredItem) {
                 try {

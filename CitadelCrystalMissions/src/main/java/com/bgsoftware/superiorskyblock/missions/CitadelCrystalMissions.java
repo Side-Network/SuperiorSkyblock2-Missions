@@ -5,7 +5,7 @@ import com.bgsoftware.superiorskyblock.api.SuperiorSkyblockAPI;
 import com.bgsoftware.superiorskyblock.api.missions.Mission;
 import com.bgsoftware.superiorskyblock.api.missions.MissionLoadException;
 import com.bgsoftware.superiorskyblock.api.wrappers.SuperiorPlayer;
-import lv.side.sidecitadel.events.CitadelCrystalBreakEvent;
+import dev.orhidea.citadelMining.events.CitadelCrystalBlockBreak;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Material;
@@ -26,7 +26,8 @@ public final class CitadelCrystalMissions extends Mission<CitadelCrystalMissions
     private static final SuperiorSkyblock superiorSkyblock = SuperiorSkyblockAPI.getSuperiorSkyblock();
 
     private static final Pattern percentagePattern = Pattern.compile("(.*)\\{percentage_(.+?)}(.*)"),
-            valuePattern = Pattern.compile("(.*)\\{value_(.+?)}(.*)");
+            valuePattern = Pattern.compile("(.*)\\{value_(.+?)}(.*)"),
+            requiredPattern = Pattern.compile("(.*)\\{required_(.+?)}(.*)");
 
     private final Map<Material, Integer> crystalsToBreak = new HashMap<>();
     private final Map<Material, String> itemsBossBar = new HashMap<>();
@@ -68,12 +69,14 @@ public final class CitadelCrystalMissions extends Mission<CitadelCrystalMissions
         if (breakTracker == null)
             return 0.0;
 
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
         int requiredItems = 0;
         int interactions = 0;
 
         for (Map.Entry<Material, Integer> entry : this.crystalsToBreak.entrySet()) {
-            requiredItems += entry.getValue();
-            interactions += Math.min(breakTracker.getBroken(entry.getKey()), entry.getValue());
+            int scaledRequired = (int) Math.ceil(entry.getValue() * multiplier);
+            requiredItems += scaledRequired;
+            interactions += Math.min(breakTracker.getBroken(entry.getKey()), scaledRequired);
         }
 
         return (double) interactions / requiredItems;
@@ -88,14 +91,17 @@ public final class CitadelCrystalMissions extends Mission<CitadelCrystalMissions
 
         int interactions = 0;
 
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
         for (Map.Entry<Material, Integer> entry : this.crystalsToBreak.entrySet())
-            interactions += Math.min(breakTracker.getBroken(entry.getKey()), entry.getValue());
+            interactions += Math.min(breakTracker.getBroken(entry.getKey()), (int) Math.ceil(entry.getValue() * multiplier));
 
         return interactions;
     }
 
-    public int getRequired(Material material) {
-        return this.crystalsToBreak.getOrDefault(material, 0);
+    public int getRequired(SuperiorPlayer superiorPlayer, Material material) {
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
+        int required = this.crystalsToBreak.getOrDefault(material, 0);
+        return required > 0 ? (int) Math.ceil(required * multiplier) : 0;
     }
 
     public int getProgress(SuperiorPlayer superiorPlayer, Material material) {
@@ -103,7 +109,8 @@ public final class CitadelCrystalMissions extends Mission<CitadelCrystalMissions
         if (breakTracker == null)
             return 0;
 
-        return breakTracker.getBroken(material);
+        int scaledRequired = getRequired(superiorPlayer, material);
+        return Math.min(breakTracker.getBroken(material), scaledRequired);
     }
 
     @Override
@@ -159,12 +166,12 @@ public final class CitadelCrystalMissions extends Mission<CitadelCrystalMissions
         ItemMeta itemMeta = itemStack.getItemMeta();
 
         if (itemMeta.hasDisplayName())
-            itemMeta.setDisplayName(parsePlaceholders(breakTracker, itemMeta.getDisplayName()));
+            itemMeta.setDisplayName(parsePlaceholders(superiorPlayer, breakTracker, itemMeta.getDisplayName()));
 
         if (itemMeta.hasLore()) {
             List<String> lore = new ArrayList<>();
             for (String line : itemMeta.getLore())
-                lore.add(parsePlaceholders(breakTracker, line));
+                lore.add(parsePlaceholders(superiorPlayer, breakTracker, line));
             itemMeta.setLore(lore);
         }
 
@@ -172,7 +179,7 @@ public final class CitadelCrystalMissions extends Mission<CitadelCrystalMissions
     }
 
     @EventHandler
-    public void onCrystalBreak(CitadelCrystalBreakEvent event) {
+    public void onCrystalBreak(CitadelCrystalBlockBreak event) {
         SuperiorPlayer superiorPlayer = SuperiorSkyblockAPI.getPlayer(event.getPlayer());
         if (!superiorSkyblock.getMissions().canCompleteNoProgress(superiorPlayer, this))
             return;
@@ -187,7 +194,7 @@ public final class CitadelCrystalMissions extends Mission<CitadelCrystalMissions
 
         breakTracker.trackMaterial(material);
         if (itemsBossBar.containsKey(material))
-            sendBossBar(superiorPlayer, itemsBossBar.get(material), getProgress(superiorPlayer, material), getRequired(material), getProgress(superiorPlayer));
+            sendBossBar(superiorPlayer, itemsBossBar.get(material), getProgress(superiorPlayer, material), getRequired(superiorPlayer, material), getProgress(superiorPlayer));
 
         Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, () -> superiorPlayer.runIfOnline(player -> {
             if (canComplete(superiorPlayer))
@@ -195,8 +202,9 @@ public final class CitadelCrystalMissions extends Mission<CitadelCrystalMissions
         }), 2L);
     }
 
-    private String parsePlaceholders(BreakTracker breakTracker, String line) {
+    private String parsePlaceholders(SuperiorPlayer superiorPlayer, BreakTracker breakTracker, String line) {
         Matcher matcher = percentagePattern.matcher(line);
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
 
         if (matcher.matches()) {
             try {
@@ -204,8 +212,9 @@ public final class CitadelCrystalMissions extends Mission<CitadelCrystalMissions
                 Material material = Material.valueOf(requiredMaterial);
                 Optional<Map.Entry<Material, Integer>> entry = crystalsToBreak.entrySet().stream().filter(e -> e.getKey() == material).findAny();
                 if (entry.isPresent()) {
+                    int scaledRequired = (int) Math.ceil(entry.get().getValue() * multiplier);
                     line = line.replace("{percentage_" + matcher.group(2) + "}",
-                            "" + (breakTracker.getBroken(material) * 100) / entry.get().getValue());
+                            "" + (breakTracker.getBroken(material) * 100) / scaledRequired);
                 }
             } catch (Exception ignored) {
             }
@@ -219,6 +228,20 @@ public final class CitadelCrystalMissions extends Mission<CitadelCrystalMissions
                 if (entry.isPresent()) {
                     line = line.replace("{value_" + matcher.group(2) + "}",
                             "" + (breakTracker.getBroken(material)));
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
+        if ((matcher = requiredPattern.matcher(line)).matches()) {
+            try {
+                String requiredMaterial = matcher.group(2).toUpperCase();
+                Material material = Material.valueOf(requiredMaterial);
+                Optional<Map.Entry<Material, Integer>> entry = crystalsToBreak.entrySet().stream().filter(e -> e.getKey() == material).findAny();
+                if (entry.isPresent()) {
+                    int scaledRequired = (int) Math.ceil(entry.get().getValue() * multiplier);
+                    line = line.replace("{required_" + matcher.group(2) + "}",
+                            "" + scaledRequired);
                 }
             } catch (Exception ignored) {
             }

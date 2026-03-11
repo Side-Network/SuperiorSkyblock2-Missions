@@ -2,9 +2,8 @@ group 'FishingMissions'
 
 repositories {
     maven { url 'https://jitpack.io' }
-    maven { url 'https://repo.momirealms.net/releases/' }
 }
 
 dependencies {
-    compileOnly 'net.momirealms:custom-fishing:2.3.4"'
+    compileOnly(files("CustomFishing-2.3.16.jar"))
 }

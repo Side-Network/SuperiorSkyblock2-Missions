@@ -36,7 +36,8 @@ public final class KillsMissions extends Mission<KillsMissions.KillsTracker> imp
     private static final SuperiorSkyblock superiorSkyblock = SuperiorSkyblockAPI.getSuperiorSkyblock();
 
     private static final Pattern percentagePattern = Pattern.compile("(.*)\\{percentage_(.+?)}(.*)"),
-            valuePattern = Pattern.compile("(.*)\\{value_(.+?)}(.*)");
+            valuePattern = Pattern.compile("(.*)\\{value_(.+?)}(.*)"),
+            requiredPattern = Pattern.compile("(.*)\\{required_(.+?)}(.*)");
 
     private JavaPlugin plugin;
     private final Map<List<String>, Integer> requiredEntities = new HashMap<>();
@@ -76,12 +77,14 @@ public final class KillsMissions extends Mission<KillsMissions.KillsTracker> imp
         if (killsTracker == null)
             return 0.0;
 
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
         int requiredEntities = 0;
         int kills = 0;
 
         for (Map.Entry<List<String>, Integer> entry : this.requiredEntities.entrySet()) {
-            requiredEntities += entry.getValue();
-            kills += Math.min(killsTracker.getKills(entry.getKey()), entry.getValue());
+            int scaledRequired = (int) Math.ceil(entry.getValue() * multiplier);
+            requiredEntities += scaledRequired;
+            kills += Math.min(killsTracker.getKills(entry.getKey()), scaledRequired);
         }
 
         return (double) kills / requiredEntities;
@@ -96,16 +99,18 @@ public final class KillsMissions extends Mission<KillsMissions.KillsTracker> imp
 
         int kills = 0;
 
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
         for (Map.Entry<List<String>, Integer> entry : this.requiredEntities.entrySet())
-            kills += Math.min(killsTracker.getKills(entry.getKey()), entry.getValue());
+            kills += Math.min(killsTracker.getKills(entry.getKey()), (int) Math.ceil(entry.getValue() * multiplier));
 
         return kills;
     }
 
-    public int getRequired(String type) {
+    public int getRequired(SuperiorPlayer superiorPlayer, String type) {
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
         for (Map.Entry<List<String>, Integer> entry : requiredEntities.entrySet()) {
             if (entry.getKey().contains(type))
-                return entry.getValue();
+                return (int) Math.ceil(entry.getValue() * multiplier);
         }
 
         return 0;
@@ -117,8 +122,10 @@ public final class KillsMissions extends Mission<KillsMissions.KillsTracker> imp
             return 0;
 
         for (Map.Entry<List<String>, Integer> entry : this.requiredEntities.entrySet()) {
-            if (entry.getKey().contains(type.name()))
-                return killsTracker.getKills(entry.getKey());
+            if (entry.getKey().contains(type.name())) {
+                int scaledRequired = getRequired(superiorPlayer, type.name());
+                return Math.min(killsTracker.getKills(entry.getKey()), scaledRequired);
+            }
         }
 
         return 0;
@@ -170,12 +177,12 @@ public final class KillsMissions extends Mission<KillsMissions.KillsTracker> imp
         ItemMeta itemMeta = itemStack.getItemMeta();
 
         if (itemMeta.hasDisplayName())
-            itemMeta.setDisplayName(parsePlaceholders(killsTracker, itemMeta.getDisplayName()));
+            itemMeta.setDisplayName(parsePlaceholders(superiorPlayer, killsTracker, itemMeta.getDisplayName()));
 
         if (itemMeta.hasLore()) {
             List<String> lore = new ArrayList<>();
             for (String line : itemMeta.getLore())
-                lore.add(parsePlaceholders(killsTracker, line));
+                lore.add(parsePlaceholders(superiorPlayer, killsTracker, line));
             itemMeta.setLore(lore);
         }
 
@@ -219,7 +226,7 @@ public final class KillsMissions extends Mission<KillsMissions.KillsTracker> imp
 
         killsTracker.track(e.getEntityType().name(), getEntityAmount(e.getEntity()));
         if (entityBossBar.containsKey(e.getEntityType()))
-            sendBossBar(superiorPlayer, entityBossBar.get(e.getEntityType()), getProgress(superiorPlayer, e.getEntityType()), getRequired(e.getEntityType().name()), getProgress(superiorPlayer));
+            sendBossBar(superiorPlayer, entityBossBar.get(e.getEntityType()), getProgress(superiorPlayer, e.getEntityType()), getRequired(superiorPlayer, e.getEntityType().name()), getProgress(superiorPlayer));
 
         Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, () -> superiorPlayer.runIfOnline(player -> {
             if (canComplete(superiorPlayer))
@@ -250,15 +257,17 @@ public final class KillsMissions extends Mission<KillsMissions.KillsTracker> imp
         return false;
     }
 
-    private String parsePlaceholders(KillsTracker killsTracker, String line) {
+    private String parsePlaceholders(SuperiorPlayer superiorPlayer, KillsTracker killsTracker, String line) {
         Matcher matcher = percentagePattern.matcher(line);
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
 
         if (matcher.matches()) {
             String requiredEntity = matcher.group(2).toUpperCase();
             Optional<Map.Entry<List<String>, Integer>> entry = requiredEntities.entrySet().stream().filter(e -> e.getKey().contains(requiredEntity)).findAny();
             if (entry.isPresent()) {
+                int scaledRequired = (int) Math.ceil(entry.get().getValue() * multiplier);
                 line = line.replace("{percentage_" + matcher.group(2) + "}",
-                        "" + (killsTracker.getKills(Collections.singletonList(requiredEntity)) * 100) / entry.get().getValue());
+                        "" + (killsTracker.getKills(Collections.singletonList(requiredEntity)) * 100) / scaledRequired);
             }
         }
 
@@ -268,6 +277,16 @@ public final class KillsMissions extends Mission<KillsMissions.KillsTracker> imp
             if (entry.isPresent()) {
                 line = line.replace("{value_" + matcher.group(2) + "}",
                         "" + killsTracker.getKills(entry.get().getKey()));
+            }
+        }
+
+        if ((matcher = requiredPattern.matcher(line)).matches()) {
+            String requiredEntity = matcher.group(2).toUpperCase();
+            Optional<Map.Entry<List<String>, Integer>> entry = requiredEntities.entrySet().stream().filter(e -> e.getKey().contains(requiredEntity)).findFirst();
+            if (entry.isPresent()) {
+                int scaledRequired = (int) Math.ceil(entry.get().getValue() * multiplier);
+                line = line.replace("{required_" + matcher.group(2) + "}",
+                        "" + scaledRequired);
             }
         }
 

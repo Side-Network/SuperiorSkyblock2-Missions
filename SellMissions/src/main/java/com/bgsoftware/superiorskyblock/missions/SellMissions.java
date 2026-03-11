@@ -31,7 +31,8 @@ public final class SellMissions extends Mission<SellMissions.SellTracker> implem
     private static final SuperiorSkyblock superiorSkyblock = SuperiorSkyblockAPI.getSuperiorSkyblock();
 
     private static final Pattern percentagePattern = Pattern.compile("(.*)\\{percentage_(.+?)}(.*)"),
-            valuePattern = Pattern.compile("(.*)\\{value_(.+?)}(.*)");
+            valuePattern = Pattern.compile("(.*)\\{value_(.+?)}(.*)"),
+            requiredPattern = Pattern.compile("(.*)\\{required_(.+?)}(.*)");
 
     private final Map<List<ItemStack>, Integer> itemsToSell = new HashMap<>();
     private final Map<List<String>, Integer> customItemsToSell = new HashMap<>();
@@ -105,20 +106,23 @@ public final class SellMissions extends Mission<SellMissions.SellTracker> implem
         if (sellTracker == null)
             return 0.0;
 
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
         int requiredItems = 0;
         int interactions = 0;
 
         for (Map.Entry<List<ItemStack>, Integer> entry : this.itemsToSell.entrySet()) {
             if (entry.getKey().isEmpty())
                 continue;
-            requiredItems += entry.getValue();
-            interactions += Math.min(sellTracker.getSold(entry.getKey()), entry.getValue());
+            int scaledRequired = (int) Math.ceil(entry.getValue() * multiplier);
+            requiredItems += scaledRequired;
+            interactions += Math.min(sellTracker.getSold(entry.getKey()), scaledRequired);
         }
         for (Map.Entry<List<String>, Integer> entry : this.customItemsToSell.entrySet()) {
             if (entry.getKey().isEmpty())
                 continue;
-            requiredItems += entry.getValue();
-            interactions += Math.min(sellTracker.getCustomSold(entry.getKey()), entry.getValue());
+            int scaledRequired = (int) Math.ceil(entry.getValue() * multiplier);
+            requiredItems += scaledRequired;
+            interactions += Math.min(sellTracker.getCustomSold(entry.getKey()), scaledRequired);
         }
 
         return (double) interactions / requiredItems;
@@ -133,37 +137,40 @@ public final class SellMissions extends Mission<SellMissions.SellTracker> implem
 
         int interactions = 0;
 
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
         for (Map.Entry<List<ItemStack>, Integer> entry : this.itemsToSell.entrySet()) {
             if (entry.getKey().isEmpty())
                 continue;
-            interactions += Math.min(sellTracker.getSold(entry.getKey()), entry.getValue());
+            interactions += Math.min(sellTracker.getSold(entry.getKey()), (int) Math.ceil(entry.getValue() * multiplier));
         }
 
         for (Map.Entry<List<String>, Integer> entry : this.customItemsToSell.entrySet()) {
             if (entry.getKey().isEmpty())
                 continue;
-            interactions += Math.min(sellTracker.getCustomSold(entry.getKey()), entry.getValue());
+            interactions += Math.min(sellTracker.getCustomSold(entry.getKey()), (int) Math.ceil(entry.getValue() * multiplier));
         }
 
         return interactions;
     }
 
-    public int getRequired(ItemStack itemStack) {
+    public int getRequired(SuperiorPlayer superiorPlayer, ItemStack itemStack) {
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
         ItemStack keyItem = itemStack.clone();
         keyItem.setAmount(1);
 
         for (Map.Entry<List<ItemStack>, Integer> entry : this.itemsToSell.entrySet()) {
             if (entry.getKey().contains(keyItem))
-                return entry.getValue();
+                return (int) Math.ceil(entry.getValue() * multiplier);
         }
 
         return 0;
     }
 
-    public int getRequired(String item) {
+    public int getRequired(SuperiorPlayer superiorPlayer, String item) {
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
         for (Map.Entry<List<String>, Integer> entry : this.customItemsToSell.entrySet()) {
             if (entry.getKey().contains(item))
-                return entry.getValue();
+                return (int) Math.ceil(entry.getValue() * multiplier);
         }
 
         return 0;
@@ -181,7 +188,8 @@ public final class SellMissions extends Mission<SellMissions.SellTracker> implem
         for (Map.Entry<List<ItemStack>, Integer> entry : this.itemsToSell.entrySet()) {
             if (!entry.getKey().contains(keyItem))
                 continue;
-            progress += sellTracker.getSold(entry.getKey());
+            int scaledRequired = getRequired(superiorPlayer, itemStack);
+            progress += Math.min(sellTracker.getSold(entry.getKey()), scaledRequired);
         }
 
         return progress;
@@ -197,7 +205,8 @@ public final class SellMissions extends Mission<SellMissions.SellTracker> implem
         for (Map.Entry<List<String>, Integer> entry : this.customItemsToSell.entrySet()) {
             if (!entry.getKey().contains(item))
                 continue;
-            progress += sellTracker.getCustomSold(entry.getKey());
+            int scaledRequired = getRequired(superiorPlayer, item);
+            progress += Math.min(sellTracker.getCustomSold(entry.getKey()), scaledRequired);
         }
 
         return progress;
@@ -267,12 +276,12 @@ public final class SellMissions extends Mission<SellMissions.SellTracker> implem
         ItemMeta itemMeta = itemStack.getItemMeta();
 
         if (itemMeta.hasDisplayName())
-            itemMeta.setDisplayName(parsePlaceholders(sellTracker, itemMeta.getDisplayName()));
+            itemMeta.setDisplayName(parsePlaceholders(superiorPlayer, sellTracker, itemMeta.getDisplayName()));
 
         if (itemMeta.hasLore()) {
             List<String> lore = new ArrayList<>();
             for (String line : itemMeta.getLore())
-                lore.add(parsePlaceholders(sellTracker, line));
+                lore.add(parsePlaceholders(superiorPlayer, sellTracker, line));
             itemMeta.setLore(lore);
         }
 
@@ -358,7 +367,7 @@ public final class SellMissions extends Mission<SellMissions.SellTracker> implem
 
         sellTracker.trackItem(itemStack);
         if (itemsBossBar.containsKey(itemStack.getType()))
-            sendBossBar(superiorPlayer, itemsBossBar.get(itemStack.getType()), getProgress(superiorPlayer, itemStack), getRequired(itemStack), getProgress(superiorPlayer));
+            sendBossBar(superiorPlayer, itemsBossBar.get(itemStack.getType()), getProgress(superiorPlayer, itemStack), getRequired(superiorPlayer, itemStack), getProgress(superiorPlayer));
 
         Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, () -> superiorPlayer.runIfOnline(player -> {
             if (canComplete(superiorPlayer))
@@ -373,7 +382,7 @@ public final class SellMissions extends Mission<SellMissions.SellTracker> implem
 
         sellTracker.trackItem(item, amount);
         if (customItemsBossBar.containsKey(item))
-            sendBossBar(superiorPlayer, customItemsBossBar.get(item), getProgress(superiorPlayer, item), getRequired(item), getProgress(superiorPlayer));
+            sendBossBar(superiorPlayer, customItemsBossBar.get(item), getProgress(superiorPlayer, item), getRequired(superiorPlayer, item), getProgress(superiorPlayer));
 
         Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, () -> superiorPlayer.runIfOnline(player -> {
             if (canComplete(superiorPlayer))
@@ -381,8 +390,9 @@ public final class SellMissions extends Mission<SellMissions.SellTracker> implem
         }), 2L);
     }
 
-    private String parsePlaceholders(SellTracker sellTracker, String line) {
+    private String parsePlaceholders(SuperiorPlayer superiorPlayer, SellTracker sellTracker, String line) {
         Matcher matcher = percentagePattern.matcher(line);
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
 
         if (matcher.matches()) {
             try {
@@ -392,8 +402,9 @@ public final class SellMissions extends Mission<SellMissions.SellTracker> implem
                             .filter(e -> e.getKey().contains(requiredItem)).findAny();
 
                     if (entry.isPresent()) {
+                        int scaledRequired = (int) Math.ceil(entry.get().getValue() * multiplier);
                         line = line.replace("{percentage_" + matcher.group(2) + "}",
-                                "" + (sellTracker.getCustomSold(entry.get().getKey()) * 100) / entry.get().getValue());
+                                "" + (sellTracker.getCustomSold(entry.get().getKey()) * 100) / scaledRequired);
                     }
                 } else {
                     String requiredItem = matcher.group(2).toUpperCase();
@@ -402,8 +413,9 @@ public final class SellMissions extends Mission<SellMissions.SellTracker> implem
                             .filter(e -> e.getKey().contains(itemStack)).findAny();
 
                     if (entry.isPresent()) {
+                        int scaledRequired = (int) Math.ceil(entry.get().getValue() * multiplier);
                         line = line.replace("{percentage_" + matcher.group(2) + "}",
-                                "" + (sellTracker.getSold(entry.get().getKey()) * 100) / entry.get().getValue());
+                                "" + (sellTracker.getSold(entry.get().getKey()) * 100) / scaledRequired);
                     }
                 }
             } catch (Exception ignored) {
@@ -430,6 +442,34 @@ public final class SellMissions extends Mission<SellMissions.SellTracker> implem
                     if (entry.isPresent()) {
                         line = line.replace("{value_" + matcher.group(2) + "}",
                                 "" + (sellTracker.getSold(entry.get().getKey())));
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
+        if ((matcher = requiredPattern.matcher(line)).matches()) {
+            try {
+                if (matcher.group(2).contains("-")) {
+                    String requiredBlock = matcher.group(2);
+                    Optional<Map.Entry<List<String>, Integer>> entry = customItemsToSell.entrySet().stream()
+                            .filter(e -> e.getKey().contains(requiredBlock)).findAny();
+
+                    if (entry.isPresent()) {
+                        int scaledRequired = (int) Math.ceil(entry.get().getValue() * multiplier);
+                        line = line.replace("{required_" + matcher.group(2) + "}",
+                                "" + scaledRequired);
+                    }
+                } else {
+                    String requiredBlock = matcher.group(2).toUpperCase();
+                    ItemStack itemStack = new ItemStack(Material.valueOf(requiredBlock));
+                    Optional<Map.Entry<List<ItemStack>, Integer>> entry = itemsToSell.entrySet().stream()
+                            .filter(e -> e.getKey().contains(itemStack)).findAny();
+
+                    if (entry.isPresent()) {
+                        int scaledRequired = (int) Math.ceil(entry.get().getValue() * multiplier);
+                        line = line.replace("{required_" + matcher.group(2) + "}",
+                                "" + scaledRequired);
                     }
                 }
             } catch (Exception ignored) {

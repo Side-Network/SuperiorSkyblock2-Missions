@@ -43,7 +43,8 @@ public final class BlocksMissions extends Mission<BlocksMissions.BlocksCounter> 
     private static final SuperiorSkyblock superiorSkyblock = SuperiorSkyblockAPI.getSuperiorSkyblock();
 
     private static final Pattern percentagePattern = Pattern.compile("(.*)\\{percentage_(.+?)}(.*)"),
-            valuePattern = Pattern.compile("(.*)\\{value_(.+?)}(.*)");
+            valuePattern = Pattern.compile("(.*)\\{value_(.+?)}(.*)"),
+            requiredPattern = Pattern.compile("(.*)\\{required_(.+?)}(.*)");
 
     private final Map<List<String>, Integer> requiredBlocks = new HashMap<>();
     private final Map<String, String> blocksBossBar = new HashMap<>();
@@ -90,12 +91,14 @@ public final class BlocksMissions extends Mission<BlocksMissions.BlocksCounter> 
         if (blocksCounter == null)
             return 0.0;
 
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
         int requiredBlocks = 0;
         int interactions = 0;
 
         for (Map.Entry<List<String>, Integer> requiredBlock : this.requiredBlocks.entrySet()) {
-            requiredBlocks += requiredBlock.getValue();
-            interactions += Math.min(blocksCounter.getBlocksCount(requiredBlock.getKey()), requiredBlock.getValue());
+            int scaledRequired = (int) Math.ceil(requiredBlock.getValue() * multiplier);
+            requiredBlocks += scaledRequired;
+            interactions += Math.min(blocksCounter.getBlocksCount(requiredBlock.getKey()), scaledRequired);
         }
 
         return (double) interactions / requiredBlocks;
@@ -110,16 +113,18 @@ public final class BlocksMissions extends Mission<BlocksMissions.BlocksCounter> 
 
         int interactions = 0;
 
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
         for (Map.Entry<List<String>, Integer> requiredBlock : this.requiredBlocks.entrySet())
-            interactions += Math.min(blocksCounter.getBlocksCount(requiredBlock.getKey()), requiredBlock.getValue());
+            interactions += Math.min(blocksCounter.getBlocksCount(requiredBlock.getKey()), (int) Math.ceil(requiredBlock.getValue() * multiplier));
 
         return interactions;
     }
 
-    public int getRequired(String type) {
+    public int getRequired(SuperiorPlayer superiorPlayer, String type) {
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
         for (Map.Entry<List<String>, Integer> entry : requiredBlocks.entrySet()) {
             if (entry.getKey().contains(type))
-                return entry.getValue();
+                return (int) Math.ceil(entry.getValue() * multiplier);
         }
 
         return -1;
@@ -130,7 +135,8 @@ public final class BlocksMissions extends Mission<BlocksMissions.BlocksCounter> 
         if (blocksCounter == null)
             return 0;
 
-        return blocksCounter.getBlocksCount(requiredBlocks, type);
+        int scaledRequired = getRequired(superiorPlayer, type);
+        return Math.min(blocksCounter.getBlocksCount(requiredBlocks, type), scaledRequired);
     }
 
     @Override
@@ -195,12 +201,12 @@ public final class BlocksMissions extends Mission<BlocksMissions.BlocksCounter> 
         ItemMeta itemMeta = itemStack.getItemMeta();
 
         if (itemMeta.hasDisplayName())
-            itemMeta.setDisplayName(parsePlaceholders(blocksCounter, itemMeta.getDisplayName()));
+            itemMeta.setDisplayName(parsePlaceholders(superiorPlayer, blocksCounter, itemMeta.getDisplayName()));
 
         if (itemMeta.hasLore()) {
             List<String> lore = new ArrayList<>();
             for (String line : itemMeta.getLore())
-                lore.add(parsePlaceholders(blocksCounter, line));
+                lore.add(parsePlaceholders(superiorPlayer, blocksCounter, line));
             itemMeta.setLore(lore);
         }
 
@@ -332,10 +338,10 @@ public final class BlocksMissions extends Mission<BlocksMissions.BlocksCounter> 
         blocksCounter.countBlock(blockInfo.getBlockKey(), amount);
         blocksCounter.countBlock("ALL", amount);
 
-        if (blocksBossBar.containsKey(block.getType().name()) && getRequired(block.getType().name()) > -1)
-            sendBossBar(superiorPlayer, blocksBossBar.get(block.getType().name()), getProgress(superiorPlayer, block.getType().name()), getRequired(block.getType().name()), getProgress(superiorPlayer));
-        else if (blocksBossBar.containsKey("ALL") && getRequired("ALL") > -1)
-            sendBossBar(superiorPlayer, blocksBossBar.get("ALL"), getProgress(superiorPlayer, "ALL"), getRequired("ALL"), getProgress(superiorPlayer));
+        if (blocksBossBar.containsKey(block.getType().name()) && getRequired(superiorPlayer, block.getType().name()) > -1)
+            sendBossBar(superiorPlayer, blocksBossBar.get(block.getType().name()), getProgress(superiorPlayer, block.getType().name()), getRequired(superiorPlayer, block.getType().name()), getProgress(superiorPlayer));
+        else if (blocksBossBar.containsKey("ALL") && getRequired(superiorPlayer, "ALL") > -1)
+            sendBossBar(superiorPlayer, blocksBossBar.get("ALL"), getProgress(superiorPlayer, "ALL"), getRequired(superiorPlayer, "ALL"), getProgress(superiorPlayer));
 
         Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, () -> superiorPlayer.runIfOnline(_player -> {
             if (canComplete(superiorPlayer))
@@ -371,15 +377,17 @@ public final class BlocksMissions extends Mission<BlocksMissions.BlocksCounter> 
         return false;
     }
 
-    private String parsePlaceholders(BlocksCounter blocksCounter, String line) {
+    private String parsePlaceholders(SuperiorPlayer superiorPlayer, BlocksCounter blocksCounter, String line) {
         Matcher matcher = percentagePattern.matcher(line);
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
 
         if (matcher.matches()) {
             String requiredBlock = matcher.group(2).toUpperCase();
             Optional<Map.Entry<List<String>, Integer>> entry = requiredBlocks.entrySet().stream().filter(e -> e.getKey().contains(requiredBlock)).findAny();
             if (entry.isPresent()) {
+                int scaledRequired = (int) Math.ceil(entry.get().getValue() * multiplier);
                 line = line.replace("{percentage_" + matcher.group(2) + "}",
-                        "" + (blocksCounter.getBlocksCount(requiredBlocks, requiredBlock) * 100) / entry.get().getValue());
+                        "" + (blocksCounter.getBlocksCount(requiredBlocks, requiredBlock) * 100) / scaledRequired);
             }
         }
 
@@ -389,6 +397,16 @@ public final class BlocksMissions extends Mission<BlocksMissions.BlocksCounter> 
             if (entry.isPresent()) {
                 line = line.replace("{value_" + matcher.group(2) + "}",
                         "" + blocksCounter.getBlocksCount(requiredBlocks, requiredBlock));
+            }
+        }
+
+        if ((matcher = requiredPattern.matcher(line)).matches()) {
+            String requiredBlock = matcher.group(2).toUpperCase();
+            Optional<Map.Entry<List<String>, Integer>> entry = requiredBlocks.entrySet().stream().filter(e -> e.getKey().contains(requiredBlock)).findFirst();
+            if (entry.isPresent()) {
+                int scaledRequired = (int) Math.ceil(entry.get().getValue() * multiplier);
+                line = line.replace("{required_" + matcher.group(2) + "}",
+                        "" + scaledRequired);
             }
         }
 

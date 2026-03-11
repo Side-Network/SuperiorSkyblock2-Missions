@@ -35,7 +35,9 @@ public final class EnchantingMissions extends Mission<EnchantingMissions.Enchant
     private static final SuperiorSkyblock superiorSkyblock = SuperiorSkyblockAPI.getSuperiorSkyblock();
 
     private static final Pattern valuePattern = Pattern.compile("(.*)\\{value_(.+?)}(.*)"),
-            doubleValuePattern = Pattern.compile("(.*)\\{value_(.+?)}(.*)\\{value_(.+?)}(.*)")
+            doubleValuePattern = Pattern.compile("(.*)\\{value_(.+?)}(.*)\\{value_(.+?)}(.*)"),
+            requiredPattern = Pattern.compile("(.*)\\{required_(.+?)}(.*)"),
+            doubleRequiredPattern = Pattern.compile("(.*)\\{required_(.+?)}(.*)\\{required_(.+?)}(.*)")
     ;
 
     private final Map<String, RequiredEnchantment> requiredEnchantments = new HashMap<>();
@@ -95,12 +97,14 @@ public final class EnchantingMissions extends Mission<EnchantingMissions.Enchant
         if (enchantsTracker == null)
             return 0.0;
 
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
         int requiredItems = 0;
         int enchants = 0;
 
         for (RequiredEnchantment requiredEnchantment : this.requiredEnchantments.values()) {
-            requiredItems += requiredEnchantment.amount;
-            enchants += Math.min(enchantsTracker.getEnchanted(requiredEnchantment), requiredEnchantment.amount);
+            int scaledRequired = (int) Math.ceil(requiredEnchantment.amount * multiplier);
+            requiredItems += scaledRequired;
+            enchants += Math.min(enchantsTracker.getEnchanted(requiredEnchantment), scaledRequired);
         }
 
         return (double) enchants / requiredItems;
@@ -115,8 +119,9 @@ public final class EnchantingMissions extends Mission<EnchantingMissions.Enchant
 
         int enchants = 0;
 
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
         for (RequiredEnchantment requiredEnchantment : this.requiredEnchantments.values()) {
-            enchants += Math.min(enchantsTracker.getEnchanted(requiredEnchantment), requiredEnchantment.amount);
+            enchants += Math.min(enchantsTracker.getEnchanted(requiredEnchantment), (int) Math.ceil(requiredEnchantment.amount * multiplier));
         }
 
         return enchants;
@@ -150,12 +155,12 @@ public final class EnchantingMissions extends Mission<EnchantingMissions.Enchant
         ItemMeta itemMeta = itemStack.getItemMeta();
 
         if (itemMeta.hasDisplayName())
-            itemMeta.setDisplayName(parsePlaceholders(enchantsTracker, itemMeta.getDisplayName()));
+            itemMeta.setDisplayName(parsePlaceholders(superiorPlayer, enchantsTracker, itemMeta.getDisplayName()));
 
         if (itemMeta.hasLore()) {
             List<String> lore = new ArrayList<>();
             for (String line : itemMeta.getLore())
-                lore.add(parsePlaceholders(enchantsTracker, line));
+                lore.add(parsePlaceholders(superiorPlayer, enchantsTracker, line));
             itemMeta.setLore(lore);
         }
 
@@ -244,8 +249,9 @@ public final class EnchantingMissions extends Mission<EnchantingMissions.Enchant
         }), 2L);
     }
 
-    private String parsePlaceholders(EnchantsTracker enchantsTracker, String line) {
+    private String parsePlaceholders(SuperiorPlayer superiorPlayer, EnchantsTracker enchantsTracker, String line) {
         Matcher matcher = doubleValuePattern.matcher(line);
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
 
         if (matcher.matches()) {
             for (int i = 1; i <= 2; i++) {
@@ -255,8 +261,9 @@ public final class EnchantingMissions extends Mission<EnchantingMissions.Enchant
                         .filter(e -> e.getKey().equalsIgnoreCase(key) || e.getValue().items.contains(key)).findAny();
 
                 if (entry.isPresent()) {
+                    int scaledRequired = (int) Math.ceil(entry.get().getValue().amount * multiplier);
                     line = line.replace("{value_" + matcher.group(2 * i) + "}",
-                            String.valueOf(Math.min(enchantsTracker.getEnchanted(entry.get().getValue()), entry.get().getValue().amount)));
+                            String.valueOf(Math.min(enchantsTracker.getEnchanted(entry.get().getValue()), scaledRequired)));
                 }
             }
         } else {
@@ -269,8 +276,41 @@ public final class EnchantingMissions extends Mission<EnchantingMissions.Enchant
                         .filter(e -> e.getKey().equalsIgnoreCase(key) || e.getValue().items.contains(key)).findAny();
 
                 if (entry.isPresent()) {
+                    int scaledRequired = (int) Math.ceil(entry.get().getValue().amount * multiplier);
                     line = line.replace("{value_" + matcher.group(2) + "}",
-                            String.valueOf(Math.min(enchantsTracker.getEnchanted(entry.get().getValue()), entry.get().getValue().amount)));
+                            String.valueOf(Math.min(enchantsTracker.getEnchanted(entry.get().getValue()), scaledRequired)));
+                }
+            }
+        }
+
+        Matcher requiredMatcher = doubleRequiredPattern.matcher(line);
+
+        if (requiredMatcher.matches()) {
+            for (int i = 1; i <= 2; i++) {
+                String key = requiredMatcher.group(2 * i).toUpperCase();
+
+                Optional<Map.Entry<String, RequiredEnchantment>> entry = requiredEnchantments.entrySet().stream()
+                        .filter(e -> e.getKey().equalsIgnoreCase(key) || e.getValue().items.contains(key)).findAny();
+
+                if (entry.isPresent()) {
+                    int scaledRequired = (int) Math.ceil(entry.get().getValue().amount * multiplier);
+                    line = line.replace("{required_" + requiredMatcher.group(2 * i) + "}",
+                            String.valueOf(scaledRequired));
+                }
+            }
+        } else {
+            requiredMatcher = requiredPattern.matcher(line);
+
+            if (requiredMatcher.matches()) {
+                String key = requiredMatcher.group(2).toUpperCase();
+
+                Optional<Map.Entry<String, RequiredEnchantment>> entry = requiredEnchantments.entrySet().stream()
+                        .filter(e -> e.getKey().equalsIgnoreCase(key) || e.getValue().items.contains(key)).findAny();
+
+                if (entry.isPresent()) {
+                    int scaledRequired = (int) Math.ceil(entry.get().getValue().amount * multiplier);
+                    line = line.replace("{required_" + requiredMatcher.group(2) + "}",
+                            String.valueOf(scaledRequired));
                 }
             }
         }

@@ -35,7 +35,8 @@ public final class SmeltMissions extends Mission<SmeltMissions.SmeltingTracker> 
     private static final SuperiorSkyblock superiorSkyblock = SuperiorSkyblockAPI.getSuperiorSkyblock();
 
     private static final Pattern percentagePattern = Pattern.compile("(.*)\\{percentage_(.+?)}(.*)"),
-            valuePattern = Pattern.compile("(.*)\\{value_(.+?)}(.*)");
+            valuePattern = Pattern.compile("(.*)\\{value_(.+?)}(.*)"),
+            requiredPattern = Pattern.compile("(.*)\\{required_(.+?)}(.*)");
 
     private final Map<List<ItemStack>, Integer> itemsToSmelt = new HashMap<>();
     private final Map<Material, String> itemsBossBar = new HashMap<>();
@@ -97,14 +98,16 @@ public final class SmeltMissions extends Mission<SmeltMissions.SmeltingTracker> 
         if (smeltingTracker == null)
             return 0.0;
 
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
         int requiredItems = 0;
         int interactions = 0;
 
         for (Map.Entry<List<ItemStack>, Integer> entry : this.itemsToSmelt.entrySet()) {
             if (entry.getKey().isEmpty())
                 continue;
-            requiredItems += entry.getValue();
-            interactions += Math.min(smeltingTracker.getSmelts(entry.getKey()), entry.getValue());
+            int scaledRequired = (int) Math.ceil(entry.getValue() * multiplier);
+            requiredItems += scaledRequired;
+            interactions += Math.min(smeltingTracker.getSmelts(entry.getKey()), scaledRequired);
         }
 
         return (double) interactions / requiredItems;
@@ -119,22 +122,24 @@ public final class SmeltMissions extends Mission<SmeltMissions.SmeltingTracker> 
 
         int interactions = 0;
 
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
         for (Map.Entry<List<ItemStack>, Integer> entry : this.itemsToSmelt.entrySet()) {
             if (entry.getKey().isEmpty())
                 continue;
-            interactions += Math.min(smeltingTracker.getSmelts(entry.getKey()), entry.getValue());
+            interactions += Math.min(smeltingTracker.getSmelts(entry.getKey()), (int) Math.ceil(entry.getValue() * multiplier));
         }
 
         return interactions;
     }
 
-    public int getRequired(ItemStack itemStack) {
+    public int getRequired(SuperiorPlayer superiorPlayer, ItemStack itemStack) {
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
         ItemStack keyItem = itemStack.clone();
         keyItem.setAmount(1);
 
         for (Map.Entry<List<ItemStack>, Integer> entry : this.itemsToSmelt.entrySet()) {
             if (entry.getKey().contains(keyItem))
-                return entry.getValue();
+                return (int) Math.ceil(entry.getValue() * multiplier);
         }
 
         return 0;
@@ -152,7 +157,8 @@ public final class SmeltMissions extends Mission<SmeltMissions.SmeltingTracker> 
         for (Map.Entry<List<ItemStack>, Integer> entry : this.itemsToSmelt.entrySet()) {
             if (!entry.getKey().contains(keyItem))
                 continue;
-            progress += smeltingTracker.getSmelts(entry.getKey());
+            int scaledRequired = getRequired(superiorPlayer, itemStack);
+            progress += Math.min(smeltingTracker.getSmelts(entry.getKey()), scaledRequired);
         }
 
         return progress;
@@ -211,12 +217,12 @@ public final class SmeltMissions extends Mission<SmeltMissions.SmeltingTracker> 
         ItemMeta itemMeta = itemStack.getItemMeta();
 
         if (itemMeta.hasDisplayName())
-            itemMeta.setDisplayName(parsePlaceholders(smeltingTracker, itemMeta.getDisplayName()));
+            itemMeta.setDisplayName(parsePlaceholders(superiorPlayer, smeltingTracker, itemMeta.getDisplayName()));
 
         if (itemMeta.hasLore()) {
             List<String> lore = new ArrayList<>();
             for (String line : itemMeta.getLore())
-                lore.add(parsePlaceholders(smeltingTracker, line));
+                lore.add(parsePlaceholders(superiorPlayer, smeltingTracker, line));
             itemMeta.setLore(lore);
         }
 
@@ -273,7 +279,7 @@ public final class SmeltMissions extends Mission<SmeltMissions.SmeltingTracker> 
 
         blocksTracker.trackItem(itemStack);
         if (itemsBossBar.containsKey(itemStack.getType()))
-            sendBossBar(superiorPlayer, itemsBossBar.get(itemStack.getType()), getProgress(superiorPlayer, itemStack), getRequired(itemStack), getProgress(superiorPlayer));
+            sendBossBar(superiorPlayer, itemsBossBar.get(itemStack.getType()), getProgress(superiorPlayer, itemStack), getRequired(superiorPlayer, itemStack), getProgress(superiorPlayer));
 
         Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, () -> superiorPlayer.runIfOnline(player -> {
             if (canComplete(superiorPlayer))
@@ -300,8 +306,9 @@ public final class SmeltMissions extends Mission<SmeltMissions.SmeltingTracker> 
         return amount;
     }
 
-    private String parsePlaceholders(SmeltingTracker smeltingTracker, String line) {
+    private String parsePlaceholders(SuperiorPlayer superiorPlayer, SmeltingTracker smeltingTracker, String line) {
         Matcher matcher = percentagePattern.matcher(line);
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
 
         if (matcher.matches()) {
             try {
@@ -311,8 +318,9 @@ public final class SmeltMissions extends Mission<SmeltMissions.SmeltingTracker> 
                         .filter(e -> e.getKey().contains(itemStack)).findAny();
 
                 if (entry.isPresent()) {
+                    int scaledRequired = (int) Math.ceil(entry.get().getValue() * multiplier);
                     line = line.replace("{percentage_" + matcher.group(2) + "}",
-                            "" + (smeltingTracker.getSmelts(entry.get().getKey()) * 100) / entry.get().getValue());
+                            "" + (smeltingTracker.getSmelts(entry.get().getKey()) * 100) / scaledRequired);
                 }
             } catch (Exception ignored) {
             }
@@ -328,6 +336,22 @@ public final class SmeltMissions extends Mission<SmeltMissions.SmeltingTracker> 
                 if (entry.isPresent()) {
                     line = line.replace("{value_" + matcher.group(2) + "}",
                             "" + (smeltingTracker.getSmelts(entry.get().getKey())));
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
+        if ((matcher = requiredPattern.matcher(line)).matches()) {
+            try {
+                String requiredBlock = matcher.group(2).toUpperCase();
+                ItemStack itemStack = new ItemStack(Material.valueOf(requiredBlock));
+                Optional<Map.Entry<List<ItemStack>, Integer>> entry = itemsToSmelt.entrySet().stream()
+                        .filter(e -> e.getKey().contains(itemStack)).findAny();
+
+                if (entry.isPresent()) {
+                    int scaledRequired = (int) Math.ceil(entry.get().getValue() * multiplier);
+                    line = line.replace("{required_" + matcher.group(2) + "}",
+                            "" + scaledRequired);
                 }
             } catch (Exception ignored) {
             }

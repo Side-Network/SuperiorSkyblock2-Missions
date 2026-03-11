@@ -28,7 +28,8 @@ public final class MythicMobKillsMissions extends Mission<MythicMobKillsMissions
     private static final SuperiorSkyblock superiorSkyblock = SuperiorSkyblockAPI.getSuperiorSkyblock();
 
     private static final Pattern percentagePattern = Pattern.compile("(.*)\\{percentage_(.+?)}(.*)"),
-            valuePattern = Pattern.compile("(.*)\\{value_(.+?)}(.*)");
+            valuePattern = Pattern.compile("(.*)\\{value_(.+?)}(.*)"),
+            requiredPattern = Pattern.compile("(.*)\\{required_(.+?)}(.*)");
 
     private JavaPlugin plugin;
     private final Map<List<String>, Integer> requiredEntities = new HashMap<>();
@@ -67,12 +68,14 @@ public final class MythicMobKillsMissions extends Mission<MythicMobKillsMissions
         if (killsTracker == null)
             return 0.0;
 
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
         int requiredEntities = 0;
         int kills = 0;
 
         for (Map.Entry<List<String>, Integer> entry : this.requiredEntities.entrySet()) {
-            requiredEntities += entry.getValue();
-            kills += Math.min(killsTracker.getKills(entry.getKey()), entry.getValue());
+            int scaledRequired = (int) Math.ceil(entry.getValue() * multiplier);
+            requiredEntities += scaledRequired;
+            kills += Math.min(killsTracker.getKills(entry.getKey()), scaledRequired);
         }
 
         return (double) kills / requiredEntities;
@@ -87,16 +90,18 @@ public final class MythicMobKillsMissions extends Mission<MythicMobKillsMissions
 
         int kills = 0;
 
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
         for (Map.Entry<List<String>, Integer> entry : this.requiredEntities.entrySet())
-            kills += Math.min(killsTracker.getKills(entry.getKey()), entry.getValue());
+            kills += Math.min(killsTracker.getKills(entry.getKey()), (int) Math.ceil(entry.getValue() * multiplier));
 
         return kills;
     }
 
-    public int getRequired(String type) {
+    public int getRequired(SuperiorPlayer superiorPlayer, String type) {
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
         for (Map.Entry<List<String>, Integer> entry : requiredEntities.entrySet()) {
             if (entry.getKey().contains(type))
-                return entry.getValue();
+                return (int) Math.ceil(entry.getValue() * multiplier);
         }
 
         return 0;
@@ -108,8 +113,10 @@ public final class MythicMobKillsMissions extends Mission<MythicMobKillsMissions
             return 0;
 
         for (Map.Entry<List<String>, Integer> entry : this.requiredEntities.entrySet()) {
-            if (entry.getKey().contains(mob.getInternalName()))
-                return killsTracker.getKills(entry.getKey());
+            if (entry.getKey().contains(mob.getInternalName())) {
+                int scaledRequired = getRequired(superiorPlayer, mob.getInternalName());
+                return Math.min(killsTracker.getKills(entry.getKey()), scaledRequired);
+            }
         }
 
         return 0;
@@ -161,12 +168,12 @@ public final class MythicMobKillsMissions extends Mission<MythicMobKillsMissions
         ItemMeta itemMeta = itemStack.getItemMeta();
 
         if (itemMeta.hasDisplayName())
-            itemMeta.setDisplayName(parsePlaceholders(killsTracker, itemMeta.getDisplayName()));
+            itemMeta.setDisplayName(parsePlaceholders(superiorPlayer, killsTracker, itemMeta.getDisplayName()));
 
         if (itemMeta.hasLore()) {
             List<String> lore = new ArrayList<>();
             for (String line : itemMeta.getLore())
-                lore.add(parsePlaceholders(killsTracker, line));
+                lore.add(parsePlaceholders(superiorPlayer, killsTracker, line));
             itemMeta.setLore(lore);
         }
 
@@ -190,7 +197,7 @@ public final class MythicMobKillsMissions extends Mission<MythicMobKillsMissions
 
         killsTracker.track(mobName, 1);
         if (entityBossBar.containsKey(mobName)) {
-            sendBossBar(superiorPlayer, entityBossBar.get(mobName), getProgress(superiorPlayer, e.getMobType()), getRequired(mobName), getProgress(superiorPlayer));
+            sendBossBar(superiorPlayer, entityBossBar.get(mobName), getProgress(superiorPlayer, e.getMobType()), getRequired(superiorPlayer, mobName), getProgress(superiorPlayer));
         }
 
         Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, () -> superiorPlayer.runIfOnline(player -> {
@@ -208,15 +215,17 @@ public final class MythicMobKillsMissions extends Mission<MythicMobKillsMissions
         return false;
     }
 
-    private String parsePlaceholders(KillsTracker killsTracker, String line) {
+    private String parsePlaceholders(SuperiorPlayer superiorPlayer, KillsTracker killsTracker, String line) {
         Matcher matcher = percentagePattern.matcher(line);
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
 
         if (matcher.matches()) {
             String requiredEntity = matcher.group(2);
             Optional<Map.Entry<List<String>, Integer>> entry = requiredEntities.entrySet().stream().filter(e -> e.getKey().contains(requiredEntity)).findAny();
             if (entry.isPresent()) {
+                int scaledRequired = (int) Math.ceil(entry.get().getValue() * multiplier);
                 line = line.replace("{percentage_" + matcher.group(2) + "}",
-                        "" + (killsTracker.getKills(entry.get().getKey()) * 100) / entry.get().getValue());
+                        "" + (killsTracker.getKills(entry.get().getKey()) * 100) / scaledRequired);
             }
         }
 
@@ -226,6 +235,16 @@ public final class MythicMobKillsMissions extends Mission<MythicMobKillsMissions
             if (entry.isPresent()) {
                 line = line.replace("{value_" + matcher.group(2) + "}",
                         "" + killsTracker.getKills(entry.get().getKey()));
+            }
+        }
+
+        if ((matcher = requiredPattern.matcher(line)).matches()) {
+            String requiredEntity = matcher.group(2);
+            Optional<Map.Entry<List<String>, Integer>> entry = requiredEntities.entrySet().stream().filter(e -> e.getKey().contains(requiredEntity)).findFirst();
+            if (entry.isPresent()) {
+                int scaledRequired = (int) Math.ceil(entry.get().getValue() * multiplier);
+                line = line.replace("{required_" + matcher.group(2) + "}",
+                        "" + scaledRequired);
             }
         }
 

@@ -28,7 +28,8 @@ public final class BuyMissions extends Mission<BuyMissions.BuyTracker> implement
     private static final SuperiorSkyblock superiorSkyblock = SuperiorSkyblockAPI.getSuperiorSkyblock();
 
     private static final Pattern percentagePattern = Pattern.compile("(.*)\\{percentage_(.+?)}(.*)"),
-            valuePattern = Pattern.compile("(.*)\\{value_(.+?)}(.*)");
+            valuePattern = Pattern.compile("(.*)\\{value_(.+?)}(.*)"),
+            requiredPattern = Pattern.compile("(.*)\\{required_(.+?)}(.*)");
 
     private final Map<ItemStack, Integer> itemsToBuy = new HashMap<>();
     private final Map<Material, String> itemsBossBar = new HashMap<>();
@@ -71,12 +72,14 @@ public final class BuyMissions extends Mission<BuyMissions.BuyTracker> implement
         if (buyTracker == null)
             return 0.0;
 
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
         int requiredItems = 0;
         int interactions = 0;
 
         for (Map.Entry<ItemStack, Integer> entry : this.itemsToBuy.entrySet()) {
-            requiredItems += entry.getValue();
-            interactions += Math.min(buyTracker.getBought(entry.getKey()), entry.getValue());
+            int scaledRequired = (int) Math.ceil(entry.getValue() * multiplier);
+            requiredItems += scaledRequired;
+            interactions += Math.min(buyTracker.getBought(entry.getKey()), scaledRequired);
         }
 
         return (double) interactions / requiredItems;
@@ -91,18 +94,21 @@ public final class BuyMissions extends Mission<BuyMissions.BuyTracker> implement
 
         int interactions = 0;
 
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
         for (Map.Entry<ItemStack, Integer> entry : this.itemsToBuy.entrySet())
-            interactions += Math.min(buyTracker.getBought(entry.getKey()), entry.getValue());
+            interactions += Math.min(buyTracker.getBought(entry.getKey()), (int) Math.ceil(entry.getValue() * multiplier));
 
         return interactions;
     }
 
-    public int getRequired(ItemStack itemStack) {
+    public int getRequired(SuperiorPlayer superiorPlayer, ItemStack itemStack) {
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
         ItemStack keyItem = itemStack.clone();
         keyItem.setItemMeta(null);
         keyItem.setAmount(1);
 
-        return this.itemsToBuy.getOrDefault(keyItem, 0);
+        int required = this.itemsToBuy.getOrDefault(keyItem, 0);
+        return required > 0 ? (int) Math.ceil(required * multiplier) : 0;
     }
 
     public int getProgress(SuperiorPlayer superiorPlayer, ItemStack itemStack) {
@@ -110,7 +116,8 @@ public final class BuyMissions extends Mission<BuyMissions.BuyTracker> implement
         if (buyTracker == null)
             return 0;
 
-        return buyTracker.getBought(itemStack);
+        int scaledRequired = getRequired(superiorPlayer, itemStack);
+        return Math.min(buyTracker.getBought(itemStack), scaledRequired);
     }
 
     @Override
@@ -166,12 +173,12 @@ public final class BuyMissions extends Mission<BuyMissions.BuyTracker> implement
         ItemMeta itemMeta = itemStack.getItemMeta();
 
         if (itemMeta.hasDisplayName())
-            itemMeta.setDisplayName(parsePlaceholders(buyTracker, itemMeta.getDisplayName()));
+            itemMeta.setDisplayName(parsePlaceholders(superiorPlayer, buyTracker, itemMeta.getDisplayName()));
 
         if (itemMeta.hasLore()) {
             List<String> lore = new ArrayList<>();
             for (String line : itemMeta.getLore())
-                lore.add(parsePlaceholders(buyTracker, line));
+                lore.add(parsePlaceholders(superiorPlayer, buyTracker, line));
             itemMeta.setLore(lore);
         }
 
@@ -202,7 +209,7 @@ public final class BuyMissions extends Mission<BuyMissions.BuyTracker> implement
 
         buyTracker.trackItem(itemStack);
         if (itemsBossBar.containsKey(itemStack.getType()))
-            sendBossBar(superiorPlayer, itemsBossBar.get(itemStack.getType()), getProgress(superiorPlayer, itemStack), getRequired(itemStack), getProgress(superiorPlayer));
+            sendBossBar(superiorPlayer, itemsBossBar.get(itemStack.getType()), getProgress(superiorPlayer, itemStack), getRequired(superiorPlayer, itemStack), getProgress(superiorPlayer));
 
         Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, () -> superiorPlayer.runIfOnline(player -> {
             if (canComplete(superiorPlayer))
@@ -210,8 +217,9 @@ public final class BuyMissions extends Mission<BuyMissions.BuyTracker> implement
         }), 2L);
     }
 
-    private String parsePlaceholders(BuyTracker buyTracker, String line) {
+    private String parsePlaceholders(SuperiorPlayer superiorPlayer, BuyTracker buyTracker, String line) {
         Matcher matcher = percentagePattern.matcher(line);
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
 
         if (matcher.matches()) {
             try {
@@ -219,8 +227,9 @@ public final class BuyMissions extends Mission<BuyMissions.BuyTracker> implement
                 ItemStack itemStack = new ItemStack(Material.valueOf(requiredItem));
                 Optional<Map.Entry<ItemStack, Integer>> entry = itemsToBuy.entrySet().stream().filter(e -> e.getKey().isSimilar(itemStack)).findAny();
                 if (entry.isPresent()) {
+                    int scaledRequired = (int) Math.ceil(entry.get().getValue() * multiplier);
                     line = line.replace("{percentage_" + matcher.group(2) + "}",
-                            "" + (buyTracker.getBought(itemStack) * 100) / entry.get().getValue());
+                            "" + (buyTracker.getBought(itemStack) * 100) / scaledRequired);
                 }
             } catch (Exception ignored) {
             }
@@ -234,6 +243,20 @@ public final class BuyMissions extends Mission<BuyMissions.BuyTracker> implement
                 if (entry.isPresent()) {
                     line = line.replace("{value_" + matcher.group(2) + "}",
                             "" + (buyTracker.getBought(itemStack)));
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
+        if ((matcher = requiredPattern.matcher(line)).matches()) {
+            try {
+                String requiredBlock = matcher.group(2).toUpperCase();
+                ItemStack itemStack = new ItemStack(Material.valueOf(requiredBlock));
+                Optional<Map.Entry<ItemStack, Integer>> entry = itemsToBuy.entrySet().stream().filter(e -> e.getKey().isSimilar(itemStack)).findAny();
+                if (entry.isPresent()) {
+                    int scaledRequired = (int) Math.ceil(entry.get().getValue() * multiplier);
+                    line = line.replace("{required_" + matcher.group(2) + "}",
+                            "" + scaledRequired);
                 }
             } catch (Exception ignored) {
             }

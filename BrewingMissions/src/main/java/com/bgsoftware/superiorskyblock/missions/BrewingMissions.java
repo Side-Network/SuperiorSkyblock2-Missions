@@ -25,7 +25,6 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.PotionMeta;
 import org.bukkit.plugin.java.JavaPlugin;
-import org.bukkit.potion.Potion;
 import org.bukkit.potion.PotionType;
 
 import javax.annotation.Nullable;
@@ -46,15 +45,15 @@ public final class BrewingMissions extends Mission<BrewingMissions.BrewingTracke
 
     private static final SuperiorSkyblock superiorSkyblock = SuperiorSkyblockAPI.getSuperiorSkyblock();
 
-    private static final boolean isUsing18 = Bukkit.getServer().getClass().getPackage().getName().contains("1_8");
-
     private static final Pattern percentagePattern = Pattern.compile("(.*)\\{percentage_(.+?)}(.*)"),
-            valuePattern = Pattern.compile("(.*)\\{value_(.+?)}(.*)");
+            valuePattern = Pattern.compile("(.*)\\{value_(.+?)}(.*)"),
+            requiredPattern = Pattern.compile("(.*)\\{required_(.+?)}(.*)");
 
     private JavaPlugin plugin;
     private final Map<List<PotionData>, Integer> requiredPotions = new HashMap<>();
     private final Map<Location, boolean[]> trackedBrewItems = new HashMap<>();
     private boolean resetAfterFinish;
+    private final Map<PotionData, String> potionBossBar = new HashMap<>();
 
     @Override
     public void load(JavaPlugin plugin, ConfigurationSection section) throws MissionLoadException {
@@ -93,6 +92,11 @@ public final class BrewingMissions extends Mission<BrewingMissions.BrewingTracke
             if (!potionDataList.isEmpty()) {
                 int requiredAmount = section.getInt("required-potions." + key + ".amount");
                 requiredPotions.put(potionDataList, requiredAmount);
+
+                String bossBar = section.getString("required-potions." + key + ".boss-bar", "?");
+                for (PotionData potionData : potionDataList) {
+                    potionBossBar.put(potionData, bossBar);
+                }
             }
         }
 
@@ -108,19 +112,55 @@ public final class BrewingMissions extends Mission<BrewingMissions.BrewingTracke
     @Override
     public double getProgress(SuperiorPlayer superiorPlayer) {
         BrewingTracker brewingTracker = get(superiorPlayer);
-
         if (brewingTracker == null)
             return 0.0;
 
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
         int requiredPotions = 0;
-        int kills = 0;
+        int brewed = 0;
 
         for (Map.Entry<List<PotionData>, Integer> requiredPotion : this.requiredPotions.entrySet()) {
-            requiredPotions += requiredPotion.getValue();
-            kills += Math.min(brewingTracker.getBrews(requiredPotion.getKey()), requiredPotion.getValue());
+            int scaledRequired = (int) Math.ceil(requiredPotion.getValue() * multiplier);
+            requiredPotions += scaledRequired;
+            brewed += Math.min(brewingTracker.getBrews(requiredPotion.getKey()), scaledRequired);
         }
 
-        return (double) kills / requiredPotions;
+        return (double) brewed / requiredPotions;
+    }
+
+    public int getRequired(SuperiorPlayer superiorPlayer, PotionData potionData) {
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
+
+        for (Map.Entry<List<PotionData>, Integer> requiredPotion : this.requiredPotions.entrySet()) {
+            for (PotionData data : requiredPotion.getKey()) {
+                if (data.equals(potionData))
+                    return (int) Math.ceil(requiredPotion.getValue() * multiplier);
+            }
+        }
+
+        return 0;
+    }
+
+    public int getProgress(SuperiorPlayer superiorPlayer, PotionData potionData) {
+        BrewingTracker brewingTracker = get(superiorPlayer);
+        if (brewingTracker == null)
+            return 0;
+
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
+        int brewed = 0;
+
+        outer:
+        for (Map.Entry<List<PotionData>, Integer> requiredPotion : this.requiredPotions.entrySet()) {
+            for (PotionData data : requiredPotion.getKey()) {
+                if (!data.equals(potionData))
+                    continue outer;
+            }
+
+            int scaledRequired = (int) Math.ceil(requiredPotion.getValue() * multiplier);
+            brewed += Math.min(brewingTracker.getBrews(requiredPotion.getKey()), scaledRequired);
+        }
+
+        return brewed;
     }
 
     @Override
@@ -130,12 +170,13 @@ public final class BrewingMissions extends Mission<BrewingMissions.BrewingTracke
         if (brewingTracker == null)
             return 0;
 
-        int kills = 0;
+        int brewed = 0;
 
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
         for (Map.Entry<List<PotionData>, Integer> requiredEntity : this.requiredPotions.entrySet())
-            kills += Math.min(brewingTracker.getBrews(requiredEntity.getKey()), requiredEntity.getValue());
+            brewed += Math.min(brewingTracker.getBrews(requiredEntity.getKey()), (int) Math.ceil(requiredEntity.getValue() * multiplier));
 
-        return kills;
+        return brewed;
     }
 
     @Override
@@ -176,20 +217,20 @@ public final class BrewingMissions extends Mission<BrewingMissions.BrewingTracke
 
     @Override
     public void formatItem(SuperiorPlayer superiorPlayer, ItemStack itemStack) {
-        BrewingTracker killsTracker = getOrCreate(superiorPlayer, s -> new BrewingTracker());
+        BrewingTracker brewingTracker = getOrCreate(superiorPlayer, s -> new BrewingTracker());
 
-        if(killsTracker == null)
+        if(brewingTracker == null)
             return;
 
         ItemMeta itemMeta = itemStack.getItemMeta();
 
         if (itemMeta.hasDisplayName())
-            itemMeta.setDisplayName(parsePlaceholders(killsTracker, itemMeta.getDisplayName()));
+            itemMeta.setDisplayName(parsePlaceholders(superiorPlayer, brewingTracker, itemMeta.getDisplayName()));
 
         if (itemMeta.hasLore()) {
             List<String> lore = new ArrayList<>();
             for (String line : itemMeta.getLore())
-                lore.add(parsePlaceholders(killsTracker, line));
+                lore.add(parsePlaceholders(superiorPlayer, brewingTracker, line));
             itemMeta.setLore(lore);
         }
 
@@ -221,9 +262,13 @@ public final class BrewingMissions extends Mission<BrewingMissions.BrewingTracke
         if (!(e.getClickedInventory() instanceof BrewerInventory) || e.getRawSlot() > 2)
             return;
 
+        SuperiorPlayer superiorPlayer = SuperiorSkyblockAPI.getPlayer((Player) e.getWhoClicked());
+        if (!superiorSkyblock.getMissions().canCompleteNoProgress(superiorPlayer, this))
+            return;
+
         BrewerInventory inventory = (BrewerInventory) e.getClickedInventory();
 
-        handleBrewing((Player) e.getWhoClicked(), inventory, slot -> slot == e.getRawSlot());
+        handleBrewing(superiorPlayer, inventory, slot -> slot == e.getRawSlot());
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -233,12 +278,16 @@ public final class BrewingMissions extends Mission<BrewingMissions.BrewingTracke
         if (!(blockState instanceof BrewingStand))
             return;
 
+        SuperiorPlayer superiorPlayer = SuperiorSkyblockAPI.getPlayer(e.getPlayer());
+        if (!superiorSkyblock.getMissions().canCompleteNoProgress(superiorPlayer, this))
+            return;
+
         BrewingStand brewingStand = (BrewingStand) blockState;
 
-        handleBrewing(e.getPlayer(), brewingStand.getInventory(), slot -> true);
+        handleBrewing(superiorPlayer, brewingStand.getInventory(), slot -> true);
     }
 
-    private void handleBrewing(Player player, BrewerInventory inventory, Predicate<Integer> checkSlot) {
+    private void handleBrewing(SuperiorPlayer superiorPlayer, BrewerInventory inventory, Predicate<Integer> checkSlot) {
         Block block = inventory.getHolder().getBlock();
 
         boolean[] brewItems = this.trackedBrewItems.get(block.getLocation());
@@ -246,8 +295,6 @@ public final class BrewingMissions extends Mission<BrewingMissions.BrewingTracke
         if (brewItems == null) {
             return;
         }
-
-        SuperiorPlayer superiorPlayer = SuperiorSkyblockAPI.getPlayer(player);
 
         BrewingTracker brewingTracker = getOrCreate(superiorPlayer, s -> new BrewingTracker());
 
@@ -259,16 +306,17 @@ public final class BrewingMissions extends Mission<BrewingMissions.BrewingTracke
                 brewItems[i] = false;
 
                 ItemStack brewItem = inventory.getItem(i);
+                PotionData potionData = PotionData.fromItemStack(brewItem);
 
-                brewingTracker.track(brewItem, brewItem.getAmount());
+                brewingTracker.track(potionData, brewItem.getAmount());
+
+                if (potionBossBar.containsKey(potionData))
+                    sendBossBar(superiorPlayer, potionBossBar.get(potionData), getProgress(superiorPlayer, potionData), getRequired(superiorPlayer, potionData), getProgress(superiorPlayer));
             }
         }
 
         if (!brewItems[0] && !brewItems[1] && !brewItems[2])
             this.trackedBrewItems.remove(block.getLocation());
-
-        if (!superiorSkyblock.getMissions().canCompleteNoProgress(superiorPlayer, this))
-            return;
 
         Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, () -> superiorPlayer.runIfOnline(_player -> {
             if (canComplete(superiorPlayer))
@@ -290,8 +338,9 @@ public final class BrewingMissions extends Mission<BrewingMissions.BrewingTracke
         return false;
     }
 
-    private String parsePlaceholders(BrewingTracker killsTracker, String line) {
+    private String parsePlaceholders(SuperiorPlayer superiorPlayer, BrewingTracker brewingTracker, String line) {
         Matcher matcher = percentagePattern.matcher(line);
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
 
         if (matcher.matches()) {
             String requiredPotionType = matcher.group(2).toUpperCase();
@@ -300,11 +349,12 @@ public final class BrewingMissions extends Mission<BrewingMissions.BrewingTracke
                 PotionData potionData = PotionData.fromString(requiredPotionType);
 
                 Optional<Map.Entry<List<PotionData>, Integer>> entry = requiredPotions.entrySet().stream()
-                        .filter(e -> e.getKey().contains(potionData)).findAny();
+                        .filter(e -> e.getKey().stream().anyMatch(p -> p.equals(potionData))).findAny();
 
                 if (entry.isPresent()) {
+                    int scaledRequired = (int) Math.ceil(entry.get().getValue() * multiplier);
                     line = line.replace("{percentage_" + matcher.group(2) + "}",
-                            "" + (killsTracker.getBrews(Collections.singletonList(potionData)) * 100) / entry.get().getValue());
+                            "" + (brewingTracker.getBrews(Collections.singletonList(potionData)) * 100) / scaledRequired);
                 }
             } catch (IllegalArgumentException ignored) {
             }
@@ -317,10 +367,27 @@ public final class BrewingMissions extends Mission<BrewingMissions.BrewingTracke
                 PotionData potionData = PotionData.fromString(requiredPotionType);
 
                 Optional<Map.Entry<List<PotionData>, Integer>> entry = requiredPotions.entrySet().stream()
-                        .filter(e -> e.getKey().contains(potionData)).findFirst();
+                        .filter(e -> e.getKey().stream().anyMatch(p -> p.equals(potionData))).findFirst();
                 if (entry.isPresent()) {
                     line = line.replace("{value_" + matcher.group(2) + "}",
-                            "" + killsTracker.getBrews(Collections.singletonList(potionData)));
+                            "" + brewingTracker.getBrews(Collections.singletonList(potionData)));
+                }
+            } catch (IllegalArgumentException ignored) {
+            }
+        }
+
+        if ((matcher = requiredPattern.matcher(line)).matches()) {
+            String requiredPotionType = matcher.group(2).toUpperCase();
+
+            try {
+                PotionData potionData = PotionData.fromString(requiredPotionType);
+
+                Optional<Map.Entry<List<PotionData>, Integer>> entry = requiredPotions.entrySet().stream()
+                        .filter(e -> e.getKey().stream().anyMatch(p -> p.equals(potionData))).findFirst();
+                if (entry.isPresent()) {
+                    int scaledRequired = (int) Math.ceil(entry.get().getValue() * multiplier);
+                    line = line.replace("{required_" + matcher.group(2) + "}",
+                            "" + scaledRequired);
                 }
             } catch (IllegalArgumentException ignored) {
             }
@@ -333,8 +400,7 @@ public final class BrewingMissions extends Mission<BrewingMissions.BrewingTracke
 
         private final Map<PotionData, Integer> brewingTracker = new HashMap<>();
 
-        void track(ItemStack brewing, int amount) {
-            PotionData potionData = PotionData.fromItemStack(brewing);
+        void track(PotionData potionData, int amount) {
             int newAmount = amount + brewingTracker.getOrDefault(potionData, 0);
             brewingTracker.put(potionData, newAmount);
         }
@@ -343,7 +409,7 @@ public final class BrewingMissions extends Mission<BrewingMissions.BrewingTracke
             int amount = 0;
 
             for (Map.Entry<PotionData, Integer> potionData : brewingTracker.entrySet()) {
-                if (potions.contains(potionData.getKey()))
+                if (potions.stream().anyMatch(p -> p.equals(potionData.getKey())))
                     amount += potionData.getValue();
             }
 
@@ -352,7 +418,7 @@ public final class BrewingMissions extends Mission<BrewingMissions.BrewingTracke
 
     }
 
-    private static class PotionData {
+    public static class PotionData {
 
         private final PotionType potionType;
         private final boolean upgraded;
@@ -364,11 +430,6 @@ public final class BrewingMissions extends Mission<BrewingMissions.BrewingTracke
             this.upgraded = upgraded;
             this.extended = extended;
             this.splash = splash;
-        }
-
-        @Nullable
-        public static PotionData fromItemStack(ItemStack itemStack) {
-            return isUsing18 ? fromItemStack18(itemStack) : fromItemStack19(itemStack);
         }
 
         public static PotionData fromString(String line) {
@@ -389,7 +450,8 @@ public final class BrewingMissions extends Mission<BrewingMissions.BrewingTracke
             return new PotionData(potionType, upgraded, extended, splash);
         }
 
-        private static PotionData fromItemStack19(ItemStack itemStack) {
+        @Nullable
+        public static PotionData fromItemStack(ItemStack itemStack) {
             ItemMeta itemMeta = itemStack.getItemMeta();
 
             if (!(itemMeta instanceof PotionMeta)) {
@@ -401,12 +463,6 @@ public final class BrewingMissions extends Mission<BrewingMissions.BrewingTracke
 
             return new PotionData(potionData.getType(), potionData.isUpgraded(), potionData.isExtended(),
                     itemStack.getType() == Material.SPLASH_POTION);
-        }
-
-        @SuppressWarnings("deprecation")
-        private static PotionData fromItemStack18(ItemStack itemStack) {
-            Potion potion = Potion.fromItemStack(itemStack);
-            return new PotionData(potion.getType(), potion.getLevel() > 1, potion.hasExtendedDuration(), potion.isSplash());
         }
 
         @Override

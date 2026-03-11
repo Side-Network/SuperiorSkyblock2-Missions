@@ -1,5 +1,5 @@
 group 'IslandMissions'
 
 dependencies {
-    compileOnly 'me.clip:PlaceholderAPI:latest'
+    compileOnly 'me.clip:placeholderapi:2.11.6'
 }
