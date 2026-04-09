@@ -127,6 +127,11 @@ public final class EnchantingMissions extends Mission<EnchantingMissions.Enchant
         return enchants;
     }
 
+    public int getRequired(SuperiorPlayer superiorPlayer, RequiredEnchantment required) {
+        double multiplier = getPeakMemberMultiplier(superiorPlayer);
+        return (int) Math.ceil(required.amount * multiplier);
+    }
+
     public int getProgress(SuperiorPlayer superiorPlayer, RequiredEnchantment requiredEnchantment) {
         EnchantsTracker enchantsTracker = get(superiorPlayer);
         if (enchantsTracker == null)
@@ -350,7 +355,7 @@ public final class EnchantingMissions extends Mission<EnchantingMissions.Enchant
                     boolean bossBar = getEnchanted(requiredEnchantment) < requiredEnchantment.amount;
                     enchantsTracker.put(requiredEnchantment, getEnchanted(requiredEnchantment) + 1);
                     if (bossBar && enchBossBar.containsKey(requiredEnchantment))
-                        sendBossBar(superiorPlayer, enchBossBar.get(requiredEnchantment), getProgress(superiorPlayer, requiredEnchantment), requiredEnchantment.amount, getProgress(superiorPlayer));
+                        sendBossBar(superiorPlayer, enchBossBar.get(requiredEnchantment), getProgress(superiorPlayer, requiredEnchantment), getRequired(superiorPlayer, requiredEnchantment), getProgress(superiorPlayer));
                 }
             }
         }

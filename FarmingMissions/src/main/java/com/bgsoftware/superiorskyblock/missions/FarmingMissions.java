@@ -60,6 +60,7 @@ public final class FarmingMissions extends Mission<FarmingMissions.FarmingTracke
             .put("COCOA_BEANS", 2)
             .put("NETHER_WART", 3)
             .put("BEETROOT", 3)
+            .put("SWEET_BERRY_BUSH", 3)
             .build();
 
     private JavaPlugin plugin;
@@ -217,7 +218,7 @@ public final class FarmingMissions extends Mission<FarmingMissions.FarmingTracke
         handlePlantGrow(block, block.getState());
     }
 
-    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
     public void onPlantGrow(BlockGrowEvent e) {
         handlePlantGrow(e.getBlock(), e.getNewState());
     }
